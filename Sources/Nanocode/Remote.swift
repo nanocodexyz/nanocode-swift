@@ -640,7 +640,7 @@ public final class RemoteSession: ChatBackend, @unchecked Sendable {
         if let report = try await follow(request, next.requestID) { return report }
         if let report = settled(next.requestID) { return report }
         state.withLock { $0.posting = nil }
-        return await reconnect(next.requestID)
+        return await reconnect(next.requestID, body: .object(body))
       } catch let error as NanocodeError {
         throw error
       } catch let retry as Retry {
@@ -685,6 +685,14 @@ public final class RemoteSession: ChatBackend, @unchecked Sendable {
 
   private func followCloudflare(_ bytes: URLSession.AsyncBytes, _ requestID: String) async throws -> JSON? {
     for try await message in ServerEvents(bytes: bytes) {
+      if message.event == "error" {
+        let refusal = JSON.parse(message.data)
+        let status = refusal?["status"]?.int ?? 0
+        if status == 408 || status == 429 || status >= 500 { throw Retry(after: nil) }
+        let body = refusal?["body"]?.string ?? message.data
+        let text = JSON.parse(body)?["error"]?.string ?? body
+        throw NanocodeError("Cloudflare answered \(status): \(text.prefix(400))")
+      }
       if let id = message.id, UInt64(id) != nil { mutate { $0.cursor = id } }
       guard !message.data.isEmpty, let json = JSON.parse(message.data), let logged = LoggedEvent(json) else { continue }
       if logged.seq > 0 {
@@ -735,18 +743,28 @@ public final class RemoteSession: ChatBackend, @unchecked Sendable {
     var after: Double?
   }
 
-  private func reconnect(_ requestID: String) async -> JSON {
+  private func reconnect(_ requestID: String, body: JSON? = nil) async -> JSON {
     var delay = 0.5
     while !Task.isCancelled {
       if let report = settled(requestID) { return report }
-      let request: URLRequest
+      var request: URLRequest
       var check: Task<Void, Never>?
       switch server.kind {
       case .cloudflare:
-        var get = URLRequest(url: URL(string: cloudflareURL("events").absoluteString + "?live=1&after=\(record.cursor ?? "0")")!)
-        headers(&get, stream: true)
-        request = get
-        check = Task { [weak self] in await self?.check(requestID) }
+        if await known(requestID) == 404 {
+          guard let body else {
+            let error = "The session object reset before it saved this turn. Send it again."
+            emit(.failure(error))
+            return ["status": "failed", "error": .string(error)]
+          }
+          request = post(URL(string: cloudflareURL("turns").absoluteString + "?live=1&after=\(record.cursor ?? "0")")!, body, stream: true)
+          request.timeoutInterval = 300
+        } else {
+          var get = URLRequest(url: URL(string: cloudflareURL("events").absoluteString + "?live=1&after=\(record.cursor ?? "0")")!)
+          headers(&get, stream: true)
+          request = get
+          check = Task { [weak self] in await self?.check(requestID) }
+        }
       case .vercel:
         let cursor = record.cursor ?? "0.0"
         guard let session = record.session, !cursor.hasSuffix(";end") else { return ["status": "completed"] }
@@ -788,6 +806,17 @@ public final class RemoteSession: ChatBackend, @unchecked Sendable {
           let report = try? JSON.parse(data), let status = report["status"]?.string,
           Self.finished.contains(status) else { return }
     settle(requestID, report)
+  }
+
+  private func known(_ requestID: String) async -> Int? {
+    let encoded = requestID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? requestID
+    var request = URLRequest(url: cloudflareURL("turns/\(encoded)"))
+    headers(&request)
+    guard let (data, response) = try? await http.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode else { return nil }
+    if status == 200, let report = try? JSON.parse(data), let state = report["status"]?.string, Self.finished.contains(state) {
+      settle(requestID, report)
+    }
+    return status
   }
 
   private static let finished: Set<String> = ["completed", "failed", "cancelled"]

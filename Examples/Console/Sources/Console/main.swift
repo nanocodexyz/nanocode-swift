@@ -73,6 +73,7 @@ func show(_ chat: Chat, from printed: inout Int) {
   printed = chat.entries.count
 }
 
+
 if arguments.first == "plan" {
   let values = Array(arguments.dropFirst())
   guard let provider = values.first.map({ $0 == "chatgpt" ? Provider.codex : $0 == "claude" ? .claude : nil }) ?? nil else {
@@ -120,14 +121,17 @@ if arguments.first == "remote-resume" {
   let chat = await Chat(revealMs: 0)
   await chat.attach(RemoteSession(server: server, store: store, conversation: record))
   var printed = 0
+  var quiet = 0
   for _ in 0..<600 {
     try await Task.sleep(nanoseconds: 200_000_000)
+    let before = printed
     let (pending, error) = await MainActor.run { () -> (Bool, String?) in
       show(chat, from: &printed)
       return (chat.pending, chat.error)
     }
     if let error { print("[error] \(error)") }
-    if !pending, printed > 0 { break }
+    quiet = !pending && printed > 0 && printed == before ? quiet + 1 : 0
+    if quiet >= 5 { break }
   }
   print("[record] open=\(store.conversations().first { $0.id == record.id }?.open ?? "none")")
   exit(0)
