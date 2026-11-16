@@ -3543,6 +3543,15 @@ var NanocodePython = (function(exports) {
 		const head = label + ": line " + (error.line + offset) + ": ";
 		return head + error.message + "\n" + (error.context === void 0 ? "" : head + "`" + error.context + "'\n");
 	}
+	new Uint8Array((/* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(24))).buffer);
+	new Uint8Array((/* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(8))).buffer);
+	new TextEncoder();
+	new TextDecoder();
+	var EngineError = class extends Error {
+		name = "Psh.EngineError";
+	};
+	new EngineError("psh passed its memory budget");
+	new DataView((/* @__PURE__ */ new Uint8Array(1024)).buffer);
 	// src/bash/internal/Prune.ts
 	function inside(path, point) {
 		return path === point || path.startsWith(point + "/");
@@ -5689,8 +5698,9 @@ var NanocodePython = (function(exports) {
 		if (first) await store("");
 		return status;
 	});
+	new TextDecoder();
 	String.raw`
-const { parentPort, workerData } = require("node:worker_threads");
+const { parentPort, receiveMessageOnPort, workerData } = require("node:worker_threads");
 const { createRequire } = require("node:module");
 const RESERVED = ["/dev", "/proc", "/lib", "/home/pyodide", "/home/web_user"];
 const reserved = path => RESERVED.some(prefix => path === prefix || path.startsWith(prefix + "/"));
@@ -5698,7 +5708,9 @@ const join = (base, name) => base === "/" ? "/" + name : base + "/" + name;
 const within = (path, dir) => path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
 const parentOf = path => { const i = path.lastIndexOf("/"); return i <= 0 ? "/" : path.slice(0, i); };
 const decoder = new TextDecoder();
-let py, start, cancel, loading, micropip = false, mirrored = [], mirror = null, known = new Map(), tracking = null;
+let py, start, cancel, loading, micropip = false, mirrored = [], mirror = null, known = new Map(), tracking = null, lazy = null, lazyOps = null;
+const S_IFDIR = 0o40000;
+const S_IFREG = 0o100000;
 const WRITES = 1 | 2 | 64 | 512 | 1024;
 const PARKED_BYTES = 64 * 1024 * 1024;
 const parked = new Map();
@@ -5713,7 +5725,7 @@ function track(fs) {
   delegate.onWriteToFile = path => { if (tracking) tracking.dirty.add(absolute(path)); };
   delegate.onMovePath = (from, to) => { if (tracking) { tracking.gone.add(absolute(from)); tracking.dirty.add(absolute(to)); } };
   delegate.onDeletePath = path => { if (tracking) tracking.gone.add(absolute(path)); };
-  delegate.onMakeDirectory = path => { if (tracking) tracking.dirty.add(absolute(path)); };
+  delegate.onMakeDirectory = path => { if (tracking && !fs.analyzePath(path).exists) tracking.dirty.add(absolute(path)); };
   const truncate = fs.truncate.bind(fs);
   fs.truncate = (path, length) => { if (tracking && typeof path === "string") tracking.dirty.add(absolute(path)); return truncate(path, length); };
 }
@@ -5738,12 +5750,113 @@ async function load() {
     try { mod = createRequire(from)("pyodide"); break; } catch {}
   }
   if (!mod) mod = await import("pyodide");
-  py = await mod.loadPyodide({ packageCacheDir: workerData.cacheDir, stdout: () => {}, stderr: () => {} });
+  const options = { packageCacheDir: workerData.cacheDir, stdout: () => {}, stderr: () => {} };
+  const fs = require("node:fs");
+  const snapshot = workerData.cacheDir + "/pyodide-" + mod.version + ".snapshot";
+  const saved = fs.existsSync(snapshot) ? fs.readFileSync(snapshot) : undefined;
+  if (saved) py = await mod.loadPyodide({ ...options, _loadSnapshot: saved }).catch(() => undefined);
+  if (!py) {
+    py = await mod.loadPyodide({ ...options, _makeSnapshot: true });
+    const partial = snapshot + "." + process.pid + ".partial";
+    fs.mkdirSync(workerData.cacheDir, { recursive: true });
+    fs.writeFileSync(partial, py.makeMemorySnapshot());
+    fs.renameSync(partial, snapshot);
+  }
   track(py.FS);
   const ns = py.globals.get("dict")();
   py.runPython(workerData.helper, { globals: ns });
   start = ns.get("start");
   cancel = ns.get("cancel");
+}
+function ask(op, path) {
+  Atomics.store(lazy.flag, 0, 0);
+  parentPort.postMessage({ id: lazy.id, type: "fs", op, path });
+  Atomics.wait(lazy.flag, 0, 0);
+  const reply = receiveMessageOnPort(lazy.port).message;
+  if (reply.code !== undefined) throw new py.FS.ErrnoError(py.ERRNO_CODES[reply.code] ?? py.ERRNO_CODES.EIO);
+  return reply.value;
+}
+function fill(node) {
+  if (node.lazyDir === undefined) return;
+  const host = node.lazyDir;
+  node.lazyDir = undefined;
+  const MEMFS = py.FS.filesystems.MEMFS;
+  for (const [name, kind, size, mtime, mode] of ask("list", host)) {
+    if (name in node.contents) continue;
+    const dir = kind === "directory";
+    const child = MEMFS.createNode(node, name, (dir ? S_IFDIR : S_IFREG) | (mode & 0o777), 0);
+    child.atime = child.mtime = child.ctime = mtime;
+    if (dir) {
+      child.lazyDir = join(host, name);
+      child.node_ops = lazyOps.dir;
+      continue;
+    }
+    child.lazyFile = join(host, name);
+    child.lazySize = size;
+    child.node_ops = lazyOps.file;
+    child.stream_ops = lazyOps.stream;
+  }
+  node.atime = node.mtime = node.ctime = Date.now();
+}
+function materialize(node) {
+  if (node.lazyFile === undefined) return;
+  const data = ask("read", node.lazyFile);
+  node.lazyFile = undefined;
+  node.contents = data;
+  node.usedBytes = data.length;
+}
+function tables(MEMFS) {
+  if (lazyOps) return lazyOps;
+  const dir = MEMFS.ops_table.dir.node;
+  const file = MEMFS.ops_table.file;
+  lazyOps = {
+    dir: {
+      ...dir,
+      lookup(parent, name) {
+        fill(parent);
+        const node = parent.contents[name];
+        if (!node) throw new py.FS.ErrnoError(py.ERRNO_CODES.ENOENT);
+        return node;
+      },
+      readdir(node) { fill(node); return dir.readdir(node); },
+      rename(node, target, name) { if (target.contents[name]) fill(target.contents[name]); return dir.rename(node, target, name); },
+      rmdir(parent, name) { if (parent.contents[name]) fill(parent.contents[name]); return dir.rmdir(parent, name); },
+    },
+    file: {
+      ...file.node,
+      getattr(node) {
+        const attr = file.node.getattr(node);
+        if (node.lazyFile !== undefined) {
+          attr.size = node.lazySize;
+          attr.blocks = Math.ceil(attr.size / attr.blksize);
+        }
+        return attr;
+      },
+      setattr(node, attr) {
+        if (attr.size === 0) node.lazyFile = undefined;
+        else if (attr.size !== undefined) materialize(node);
+        return file.node.setattr(node, attr);
+      },
+    },
+    stream: { ...file.stream, open(stream) { materialize(stream.node); } },
+  };
+  return lazyOps;
+}
+function attach(roots) {
+  const fs = py.FS;
+  const MEMFS = fs.filesystems.MEMFS;
+  for (const root of roots) {
+    fs.mkdirTree(root);
+    const node = fs.mount(MEMFS, {}, root);
+    const ops = tables(MEMFS);
+    node.lazyDir = root;
+    node.node_ops = ops.dir;
+  }
+}
+function detach(roots) {
+  const fs = py.FS;
+  fs.chdir("/");
+  for (const root of roots) fs.unmount(root);
 }
 function unmirror(fs, path) {
   if (reserved(path) || !fs.analyzePath(path).exists) return;
@@ -5824,6 +5937,10 @@ function sync(message) {
 async function run(id, job) {
   const fs = py.FS;
   const out = (fd, text) => parentPort.postMessage({ id, type: "out", fd, text });
+  if (job.lazy) {
+    lazy = { id, flag: new Int32Array(job.lazy.flag), port: job.lazy.port };
+    attach(job.roots);
+  }
   for (const [path, data, stamp] of job.files) {
     fs.mkdirTree(parentOf(path));
     fs.writeFile(path, data);
@@ -5853,6 +5970,11 @@ async function run(id, job) {
   }
   const found = changes(fs, job.roots);
   tracking = null;
+  if (lazy) {
+    detach(job.roots);
+    lazy.port.close();
+    lazy = null;
+  }
   for (const path of [...found.files.keys(), ...found.deleted]) known.delete(path);
   parentPort.postMessage({ id, type: "done", status, files: found.files, dirs: found.dirs, deleted: found.deleted });
 }

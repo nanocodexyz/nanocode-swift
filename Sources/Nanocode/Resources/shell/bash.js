@@ -111,13 +111,16 @@ var NanocodeBash = (function(exports) {
 	function wellFormed(text) {
 		return text.isWellFormed();
 	}
-	function byte(value) {
+	function byte$1(value) {
 		const b = value & 255;
 		return String.fromCharCode(b < 128 ? b : 56320 + b);
 	}
+	function plain(text) {
+		return codec === void 0 && wellFormed(text);
+	}
 	function encode(text) {
 		if (codec) return codec.encode(text);
-		if (wellFormed(text)) return encoder.encode(text);
+		if (wellFormed(text)) return encoder$1.encode(text);
 		const out = new Uint8Array(text.length * 3);
 		let n = 0;
 		for (let i = 0; i < text.length; i++) {
@@ -249,10 +252,10 @@ var NanocodeBash = (function(exports) {
 			resolve();
 		}, 0));
 	}
-	var encoder, strict, lossy, codec, breath;
+	var encoder$1, strict, lossy, codec, breath;
 	var init_Fs = __esmMin(() => {
 		init_FileSystem();
-		encoder = new TextEncoder();
+		encoder$1 = new TextEncoder();
 		strict = new TextDecoder("utf-8", {
 			fatal: true,
 			ignoreBOM: true
@@ -267,7 +270,7 @@ var NanocodeBash = (function(exports) {
 	init_FileSystem();
 	init_Fs();
 	const nothing = /* @__PURE__ */ new Uint8Array(0);
-	function join$3(dir, name) {
+	function join$5(dir, name) {
 		return dir === "/" ? "/" + name : dir + "/" + name;
 	}
 	function create$1(options = {}) {
@@ -289,7 +292,7 @@ var NanocodeBash = (function(exports) {
 			if (!node.pending || !lower || node.origin === void 0) return;
 			const origin = node.origin;
 			for (const name of await lower.list(origin)) {
-				const path = join$3(origin, name);
+				const path = join$5(origin, name);
 				const stat = await lower.stat(path);
 				if (!stat || node.children.has(name)) continue;
 				if (stat.kind === "file") fetchedFiles.add(path);
@@ -394,10 +397,8 @@ var NanocodeBash = (function(exports) {
 			return node.children;
 		};
 		for (const [path, content] of Object.entries(options.files ?? {})) seed(normalize(path), typeof content === "string" ? encode(content) : content);
-		const fs = {
-			maxFileBytes,
-			async stat(path) {
-				await fault(path);
+		const now = {
+			stat(path) {
 				let target;
 				try {
 					target = real(path);
@@ -414,16 +415,13 @@ var NanocodeBash = (function(exports) {
 					mode: node.mode
 				};
 			},
-			async read(path) {
-				await fault(path);
+			read(path) {
 				const node = find(real(path));
 				if (!node || node.kind === "link") throw new FsError("ENOENT", path);
 				if (node.kind !== "file") throw new FsError("EISDIR", path);
-				await load(node);
 				return node.data;
 			},
-			async write(path, data, append = false) {
-				await fault(path);
+			write(path, data, append = false) {
 				const target = real(path);
 				const parent = directory(parentOf(target));
 				const name = baseOf(target);
@@ -431,7 +429,6 @@ var NanocodeBash = (function(exports) {
 				const existing = parent.get(name);
 				if (existing?.kind === "directory") throw new FsError("EISDIR", path);
 				if (existing?.kind === "link") throw new FsError("ENOENT", path);
-				if (append && existing) await load(existing);
 				if (append && existing && data.length) {
 					existing.written = true;
 					const length = existing.data.length + data.length;
@@ -457,29 +454,10 @@ var NanocodeBash = (function(exports) {
 					...existing?.kind === "file" && existing.lowerMode !== void 0 ? { lowerMode: existing.lowerMode } : {}
 				});
 			},
-			async writeMany(dirs, files) {
-				for (const dir of dirs) {
-					await fault(dir);
-					if (find(real(dir))?.kind !== "directory") await fs.mkdir(dir);
-				}
-				const refused = [];
-				for (const file of files) {
-					if (file.data.length > maxFileBytes) {
-						refused.push(file.path);
-						continue;
-					}
-					await fs.write(file.path, file.data);
-					const node = find(real(file.path));
-					if (node?.kind === "file") node.mtime = file.mtime;
-				}
-				return refused;
-			},
-			async list(path) {
-				await fault(path);
+			list(path) {
 				return [...directory(real(path)).keys()].sort();
 			},
-			async mkdir(path) {
-				await fault(path, false);
+			mkdir(path) {
 				const target = real(path, false);
 				const parent = directory(parentOf(target));
 				if (parent.has(baseOf(target))) throw new FsError("EEXIST", path);
@@ -490,8 +468,7 @@ var NanocodeBash = (function(exports) {
 					mode: 493
 				});
 			},
-			async remove(path) {
-				await fault(path, false);
+			remove(path) {
 				const target = real(path, false);
 				if (target === "/") throw new FsError("EINVAL", path);
 				const parent = directory(parentOf(target));
@@ -500,20 +477,17 @@ var NanocodeBash = (function(exports) {
 				if (node.kind === "directory" && node.children.size) throw new FsError("ENOTEMPTY", path);
 				parent.delete(baseOf(target));
 			},
-			async chmod(path, mode) {
-				await fault(path);
+			chmod(path, mode) {
 				const node = find(real(path));
 				if (!node || node.kind === "link") throw new FsError("ENOENT", path);
 				node.mode = mode & 4095;
 			},
-			async utimes(path, mtime) {
-				await fault(path);
+			utimes(path, mtime) {
 				const node = find(real(path));
 				if (!node || node.kind === "link") throw new FsError("ENOENT", path);
 				node.mtime = mtime;
 			},
-			async symlink(target, path) {
-				await fault(path, false);
+			symlink(target, path) {
 				const link = real(path, false);
 				const parent = directory(parentOf(link));
 				if (link === "/" || parent.has(baseOf(link))) throw new FsError("EEXIST", path);
@@ -525,13 +499,11 @@ var NanocodeBash = (function(exports) {
 				});
 				links++;
 			},
-			async readlink(path) {
-				await fault(path, false);
+			readlink(path) {
 				const node = find(real(path, false));
 				return node?.kind === "link" ? node.target : null;
 			},
-			async lstat(path) {
-				await fault(path, false);
+			lstat(path) {
 				let target;
 				try {
 					target = real(path, false);
@@ -555,9 +527,7 @@ var NanocodeBash = (function(exports) {
 					mode: node.mode
 				};
 			},
-			async rename(from, to) {
-				await fault(from, false);
-				await fault(to, false);
+			rename(from, to) {
 				const source = real(from, false);
 				const target = real(to, false);
 				if (target === source) return;
@@ -569,6 +539,82 @@ var NanocodeBash = (function(exports) {
 				if (targetParent.get(baseOf(target))?.kind === "directory") throw new FsError("EISDIR", to);
 				sourceParent.delete(baseOf(source));
 				targetParent.set(baseOf(target), node);
+			}
+		};
+		const held = async (path) => {
+			const node = find(real(path));
+			if (node?.kind === "file") await load(node);
+		};
+		const fs = {
+			maxFileBytes,
+			...lower ? {} : { sync: now },
+			async stat(path) {
+				await fault(path);
+				return now.stat(path);
+			},
+			async read(path) {
+				await fault(path);
+				await held(path);
+				return now.read(path);
+			},
+			async write(path, data, append = false) {
+				await fault(path);
+				if (append) await held(path);
+				now.write(path, data, append);
+			},
+			async writeMany(dirs, files) {
+				for (const dir of dirs) {
+					await fault(dir);
+					if (find(real(dir))?.kind !== "directory") await fs.mkdir(dir);
+				}
+				const refused = [];
+				for (const file of files) {
+					if (file.data.length > maxFileBytes) {
+						refused.push(file.path);
+						continue;
+					}
+					await fs.write(file.path, file.data);
+					const node = find(real(file.path));
+					if (node?.kind === "file") node.mtime = file.mtime;
+				}
+				return refused;
+			},
+			async list(path) {
+				await fault(path);
+				return now.list(path);
+			},
+			async mkdir(path) {
+				await fault(path, false);
+				now.mkdir(path);
+			},
+			async remove(path) {
+				await fault(path, false);
+				now.remove(path);
+			},
+			async chmod(path, mode) {
+				await fault(path);
+				now.chmod(path, mode);
+			},
+			async utimes(path, mtime) {
+				await fault(path);
+				now.utimes(path, mtime);
+			},
+			async symlink(target, path) {
+				await fault(path, false);
+				now.symlink(target, path);
+			},
+			async readlink(path) {
+				await fault(path, false);
+				return now.readlink(path);
+			},
+			async lstat(path) {
+				await fault(path, false);
+				return now.lstat(path);
+			},
+			async rename(from, to) {
+				await fault(from, false);
+				await fault(to, false);
+				now.rename(from, to);
 			},
 			async changes() {
 				const changes = {
@@ -587,7 +633,7 @@ var NanocodeBash = (function(exports) {
 					}
 					if (!node.children.size && path !== "/") changes.empty.push(path);
 					for (const [name, child] of node.children) {
-						const at = join$3(path, name);
+						const at = join$5(path, name);
 						if (child.kind === "directory") await walk(child, at);
 						else if (child.kind === "link") changes.links.push([at, child.target]);
 						else {
@@ -677,7 +723,7 @@ var NanocodeBash = (function(exports) {
 		};
 		if (c === "x") {
 			const hex = src.slice(pos + 1).match(/^[0-9a-fA-F]{1,2}/)?.[0];
-			if (hex) return [byte(parseInt(hex, 16)), 1 + hex.length];
+			if (hex) return [byte$1(parseInt(hex, 16)), 1 + hex.length];
 		}
 		if (c === "u" || c === "U") {
 			const hex = src.slice(pos + 1).match(c === "u" ? /^[0-9a-fA-F]{1,4}/ : /^[0-9a-fA-F]{1,8}/)?.[0];
@@ -685,7 +731,7 @@ var NanocodeBash = (function(exports) {
 		}
 		if (c !== void 0 && /[0-7]/.test(c)) {
 			const oct = src.slice(pos).match(/^[0-7]{1,3}/)[0];
-			return [byte(parseInt(oct, 8)), oct.length];
+			return [byte$1(parseInt(oct, 8)), oct.length];
 		}
 		if (c !== void 0 && c in simple) return [simple[c], 1];
 		return ["\\" + (c ?? ""), c === void 0 ? 0 : 1];
@@ -1695,7 +1741,7 @@ var NanocodeBash = (function(exports) {
 			const start = edit.start - source.start;
 			if (start < at) continue;
 			text += source.text.slice(at, start);
-			text += edit.body ? "$(" + comsub(edit.body) + ")" : quote$4(edit.value ?? "");
+			text += edit.body ? "$(" + comsub(edit.body) + ")" : quote$5(edit.value ?? "");
 			at = edit.end - source.start;
 		}
 		return (text + source.text.slice(at)).replaceAll("\\\n", "");
@@ -1706,12 +1752,12 @@ var NanocodeBash = (function(exports) {
 		printer.flush("");
 		return printer.out;
 	}
-	function quote$4(value) {
+	function quote$5(value) {
 		return "'" + value.replaceAll("'", "'\\''") + "'";
 	}
 	function fallback$1(word) {
 		return word.map((part) => {
-			if (part.type === "text") return part.quoted ? part.value ? quote$4(part.value) : "''" : part.value.replace(/[\s'"\\$\x60;&|()<>*?[\]#~]/g, "\\$&");
+			if (part.type === "text") return part.quoted ? part.value ? quote$5(part.value) : "''" : part.value.replace(/[\s'"\\$\x60;&|()<>*?[\]#~]/g, "\\$&");
 			if (part.type === "param") return "${" + part.name + "}";
 			if (part.type === "command") return "$(" + comsub(part.body) + ")";
 			if (part.type === "arith") return "$((" + fallback$1(part.expr) + "))";
@@ -2049,7 +2095,7 @@ var NanocodeBash = (function(exports) {
 				list.forEach((redirect, index) => {
 					const doc = heredocs.get(redirect);
 					if (doc) {
-						this.out += (redirect.fd ? String(redirect.fd) : "") + "<<" + (doc.strip ? "-" : "") + (doc.quoted ? quote$4(doc.delimiter) : doc.delimiter);
+						this.out += (redirect.fd ? String(redirect.fd) : "") + "<<" + (doc.strip ? "-" : "") + (doc.quoted ? quote$5(doc.delimiter) : doc.delimiter);
 						docs.push(redirect);
 					} else this.out += redirectText(redirect);
 					if (index < list.length - 1) this.out += " ";
@@ -2164,7 +2210,7 @@ var NanocodeBash = (function(exports) {
 	function shift(count) {
 		return typeof count === "number" && count >= 0 && count < 64 ? count : Number(BigInt.asUintN(6, big(count)));
 	}
-	function apply(op, a, b, run) {
+	function apply$2(op, a, b, run) {
 		const small = typeof a === "number" && typeof b === "number";
 		switch (op) {
 			case "+":
@@ -2282,7 +2328,7 @@ var NanocodeBash = (function(exports) {
 				if (next?.kind === "op" && ASSIGN.has(next.value)) {
 					pos++;
 					const right = assign(run);
-					const value = next.value === "=" ? right : apply(next.value.slice(0, -1), variable(token.value, index), right, run);
+					const value = next.value === "=" ? right : apply$2(next.value.slice(0, -1), variable(token.value, index), right, run);
 					if (run) scope.set(token.value, value, index);
 					return value;
 				}
@@ -2316,7 +2362,7 @@ var NanocodeBash = (function(exports) {
 					left = Number(left != 0 || right != 0);
 				} else {
 					const right = binary(token.value === "**" ? prec : prec + 1, run);
-					left = apply(token.value, left, right, run);
+					left = apply$2(token.value, left, right, run);
 				}
 			}
 			return left;
@@ -2330,7 +2376,7 @@ var NanocodeBash = (function(exports) {
 					if (name?.kind !== "name") throw new ArithError("syntax error: operand expected");
 					pos++;
 					const index = subscript(run);
-					const value = apply(token.value === "++" ? "+" : "-", variable(name.value, index), 1, run);
+					const value = apply$2(token.value === "++" ? "+" : "-", variable(name.value, index), 1, run);
 					if (run) scope.set(name.value, value, index);
 					return value;
 				}
@@ -2360,7 +2406,7 @@ var NanocodeBash = (function(exports) {
 			const value = variable(token.value, index);
 			if (isOp("++") || isOp("--")) {
 				const op = String(tokens[pos++].value);
-				if (run) scope.set(token.value, apply(op === "++" ? "+" : "-", value, 1, run), index);
+				if (run) scope.set(token.value, apply$2(op === "++" ? "+" : "-", value, 1, run), index);
 			}
 			return value;
 		}
@@ -2654,17 +2700,17 @@ var NanocodeBash = (function(exports) {
 			true
 		];
 		if (format && /^[1-7]/.test(body)) return [
-			byte(parseInt(body, 8)),
+			byte$1(parseInt(body, 8)),
 			match[0].length,
 			false
 		];
 		if (octal ? /^[0-7]/.test(body) : body[0] === "0") return [
-			byte(parseInt((octal ? body : body.slice(1)) || "0", 8)),
+			byte$1(parseInt((octal ? body : body.slice(1)) || "0", 8)),
 			match[0].length,
 			false
 		];
 		if (body.length > 1 && body[0] === "x") return [
-			byte(parseInt(body.slice(1), 16)),
+			byte$1(parseInt(body.slice(1), 16)),
 			match[0].length,
 			false
 		];
@@ -3086,7 +3132,7 @@ var NanocodeBash = (function(exports) {
 	function megabytes(bytes) {
 		return (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + " MB";
 	}
-	function budget(limits, bytes, what) {
+	function budget$1(limits, bytes, what) {
 		if (bytes > limits.maxMemoryBytes) throw new LimitError(what + " needs about " + megabytes(bytes) + ", which exceeds this host's memory budget of " + megabytes(limits.maxMemoryBytes));
 	}
 	function flatten$1(text) {
@@ -3099,6 +3145,9 @@ var NanocodeBash = (function(exports) {
 	function streaming(handler) {
 		STREAMS.add(handler);
 		return handler;
+	}
+	function buffered(name, options) {
+		return !STREAMS.has(options.handler) && !(UNREAD.has(name) && options.handler === options.commands.get(name));
 	}
 	function unanswered(what) {
 		return what + ": (this simulated shell has no answer for this machine's " + what + ")";
@@ -3314,7 +3363,7 @@ var NanocodeBash = (function(exports) {
 		}
 		return false;
 	}
-	async function run(runner, source, io) {
+	async function run$2(runner, source, io) {
 		let status = await guard$1(runner, io, async () => {
 			const parsed = parseLines(source);
 			const status = await runner.script(parsed.script, io);
@@ -3358,7 +3407,7 @@ var NanocodeBash = (function(exports) {
 		const head = label + ": line " + (error.line + offset) + ": ";
 		return head + error.message + "\n" + (error.context === void 0 ? "" : head + "`" + error.context + "'\n");
 	}
-	function missing(name) {
+	function missing$1(name) {
 		if (/^(node|nodejs|npm|npx|pnpm|yarn|bun|bunx|deno|tsc|tsx|ts-node)$/.test(name)) return " (this simulated shell has no JavaScript runtime or package manager)";
 		if (/^(python[23]?(\.\d+)?|pip3?|pytest|ipython)$/.test(name)) return " (Python is not available on this host)";
 		if (/^(sqlite3|psql|mysql|gcc|cc|clang|g\+\+|cargo|rustc|go|java|javac|ruby|perl|php|docker|sudo|apt|apt-get|brew)$/.test(name)) return " (this simulated shell has no " + name + ")";
@@ -3446,12 +3495,14 @@ var NanocodeBash = (function(exports) {
 			limit;
 			memory;
 			signal;
+			#pull;
 			#reader;
 			#writer;
-			constructor(limit, signal, memory = Infinity) {
+			constructor(limit, signal, memory = Infinity, pull) {
 				this.limit = limit;
 				this.memory = memory;
 				this.signal = signal;
+				this.#pull = pull;
 				signal?.addEventListener("abort", () => this.#wake(), { once: true });
 			}
 			#wake() {
@@ -3478,7 +3529,8 @@ var NanocodeBash = (function(exports) {
 				while (!this.#chunks.length) {
 					if (this.ended || this.closed) return null;
 					this.#abort();
-					await new Promise((resolve) => this.#reader = resolve);
+					if (this.#pull) await this.#pull();
+					else await new Promise((resolve) => this.#reader = resolve);
 				}
 				const chunks = this.#chunks;
 				const head = chunks[0];
@@ -3538,6 +3590,8 @@ var NanocodeBash = (function(exports) {
 			#spill;
 			#pending;
 			#failure;
+			#piped = false;
+			#broken = false;
 			constructor(limit, strict = true, discard = false) {
 				this.limit = limit;
 				this.strict = strict;
@@ -3548,16 +3602,17 @@ var NanocodeBash = (function(exports) {
 				out.#pipe = pipe;
 				return out;
 			}
-			static spill(limit, spill) {
+			static spill(limit, spill, piped = false) {
 				const out = new Output(limit);
 				out.#spill = spill;
+				out.#piped = piped;
 				return out;
 			}
 			get piped() {
-				return this.#pipe !== void 0;
+				return this.#pipe !== void 0 || this.#piped;
 			}
 			get closed() {
-				return this.#pipe?.closed ?? false;
+				return this.#pipe?.closed ?? this.#broken;
 			}
 			get bounded() {
 				return !this.#pipe && !this.#spill && !this.discard;
@@ -3594,6 +3649,7 @@ var NanocodeBash = (function(exports) {
 				if (!text) return;
 				const spill = this.#spill;
 				const pending = (this.#pending ?? Promise.resolve()).then(() => spill(text)).catch((error) => {
+					if (error instanceof PipeError) this.#broken = true;
 					this.#failure ??= error;
 				}).then(() => {
 					if (this.#pending === pending) this.#pending = void 0;
@@ -4608,7 +4664,7 @@ var NanocodeBash = (function(exports) {
 					}
 					let size = 0;
 					for (const entry of entries) size += typeof entry === "string" ? entry.length + 40 : 8;
-					budget(this.host.limits, size, name + ": an array of " + entries.length + " elements");
+					budget$1(this.host.limits, size, name + ": an array of " + entries.length + " elements");
 					const array = assign.append ? this.state.vars.get(name) ?? [] : [];
 					let position = array.length;
 					for (let i = 0; i < entries.length; i++) {
@@ -4657,7 +4713,7 @@ var NanocodeBash = (function(exports) {
 					}
 					const before = current?.[0] ?? "";
 					const next = before + value;
-					if (next.length >>> 20 !== before.length >>> 20) budget(this.host.limits, 4 * next.length, name);
+					if (next.length >>> 20 !== before.length >>> 20) budget$1(this.host.limits, 4 * next.length, name);
 					if (next.length > 4096 && Math.clz32(next.length) < Math.clz32(before.length)) flatten$1(next);
 					this.set(name, next);
 				} else this.set(name, value);
@@ -4835,8 +4891,8 @@ var NanocodeBash = (function(exports) {
 					io.stderr.write(this.prefix() + name + ": " + (stat ? "Is a directory" : "No such file or directory") + "\n");
 					return stat ? 126 : 127;
 				}
-				if (this.host.fallback) throw new MachineError(name + ": command not found" + missing(name));
-				io.stderr.write(this.prefix() + name + ": command not found" + missing(name) + "\n");
+				if (this.host.fallback) throw new MachineError(name + ": command not found" + missing$1(name));
+				io.stderr.write(this.prefix() + name + ": command not found" + missing$1(name) + "\n");
 				return 127;
 			}
 			async external(name, handler, args, io) {
@@ -6707,8 +6763,1021 @@ var NanocodeBash = (function(exports) {
 		BUILTINS$2.sh = BUILTINS$2.bash;
 		UNSUPPORTED = /^(unrecognized|invalid|unsupported|unknown) option|^Unknown option|not supported|network access is not available|Cannot find package 'pyodide'/;
 	});
-	// src/bash/internal/Prune.ts
+	// src/bash/internal/Psh.ts
+	init_FileSystem();
+	init_Fs();
 	init_Shell();
+	const abiVersion = 7;
+	const budget = 2e3;
+	const readBytes = 65536;
+	const machineVariables = [
+		"IFS",
+		"OPTERR",
+		"OPTIND",
+		"OSTYPE",
+		"PS4",
+		"PWD"
+	];
+	const kind = {
+		done: 8,
+		fs: 1,
+		has: 5,
+		kill: 7,
+		now: 3,
+		panic: 10,
+		random: 4,
+		sleep: 2,
+		spawn: 6,
+		utcOffset: 11,
+		wake: 9
+	};
+	const fsOp = {
+		list: 6,
+		lstat: 1,
+		mkdir: 7,
+		read: 2,
+		readLink: 12,
+		removeDir: 9,
+		removeFile: 8,
+		rename: 10,
+		setMode: 13,
+		setMtime: 14,
+		stat: 0,
+		symlink: 11,
+		writeAppend: 4,
+		writeNew: 5,
+		writeReplace: 3
+	};
+	const errno$1 = {
+		EBUSY: 16,
+		EEXIST: 17,
+		EFBIG: 27,
+		EINVAL: 22,
+		EIO: 5,
+		EISDIR: 21,
+		ELOOP: 40,
+		ENOENT: 2,
+		ENOTDIR: 20,
+		ENOTEMPTY: 39,
+		ENOTSUP: 95,
+		EPIPE: 32,
+		EROFS: 30,
+		EXDEV: 18
+	};
+	const later = -2147483648;
+	const readEnd = 65536;
+	const stat$1 = /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(24));
+	const statView = new Uint8Array(stat$1.buffer);
+	const clock = /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(8));
+	const clockBytes = new Uint8Array(clock.buffer);
+	const ended = [
+		"exited",
+		"cancelled",
+		"fuel",
+		"missing",
+		"operations",
+		"unanswered"
+	];
+	const empty = /* @__PURE__ */ new Uint8Array(0);
+	const utf8 = new TextEncoder();
+	const text$3 = new TextDecoder();
+	const instances$2 = /* @__PURE__ */ new WeakMap();
+	var EngineError = class extends Error {
+		name = "Psh.EngineError";
+	};
+	function load$1(module) {
+		const loaded = instances$2.get(module);
+		if (loaded) return loaded;
+		const instance = {
+			current: void 0,
+			failure: void 0,
+			module,
+			nextRequest: 1,
+			procs: /* @__PURE__ */ new Map(),
+			requests: /* @__PURE__ */ new Map(),
+			shells: /* @__PURE__ */ new Map(),
+			view: empty
+		};
+		const created = WebAssembly.instantiate(module, { psh: { host_call: (kindOf, op, arg, ptr, len) => hostCall$1(instance, {
+			arg: arg >>> 0,
+			kind: kindOf,
+			len: len >>> 0,
+			op: op >>> 0,
+			ptr: ptr >>> 0
+		}) } }).then((made) => {
+			instance.exports = made.exports;
+			const version = instance.exports.psh_abi_version();
+			if (version !== abiVersion) throw new EngineError("psh module has ABI " + version + ", this glue 7");
+			instance.exports.psh_init();
+			return instance;
+		});
+		instances$2.set(module, created);
+		created.catch(() => instances$2.delete(module));
+		return created;
+	}
+	function keep(options) {
+		return {
+			config: config(options).slice(),
+			idle: 0,
+			instance: void 0
+		};
+	}
+	function drop(kept) {
+		const instance = kept.instance;
+		const idle = kept.idle;
+		kept.idle = 0;
+		kept.instance = void 0;
+		if (!idle || !instance || instance.failure !== void 0) return;
+		try {
+			instance.exports.psh_shell_free(idle);
+		} catch (error) {
+			instance.failure = "psh stopped: " + (error instanceof Error ? error.message : String(error));
+		}
+	}
+	async function run$1(module, options) {
+		const instance = await load$1(module);
+		if (instance.failure !== void 0) {
+			instances$2.delete(module);
+			return run$1(module, options);
+		}
+		const x = instance.exports;
+		const host = {
+			cancel: () => {
+				if (instance.current === host) {
+					queueMicrotask(host.cancel);
+					return;
+				}
+				if (instance.failure !== void 0 || !instance.shells.has(host.id)) return;
+				for (const proc of instance.procs.values()) if (proc.host === host) abort(proc);
+				x.psh_shell_cancel(host.id);
+				wake(host);
+			},
+			failure: void 0,
+			finished: false,
+			halted: void 0,
+			id: 0,
+			options,
+			timers: /* @__PURE__ */ new Set(),
+			waiting: void 0,
+			woken: false
+		};
+		try {
+			x.psh_memory_limit(options.limits.memory < 2 ** 32 ? options.limits.memory : 0);
+			const kept = options.kept;
+			if (kept && kept.idle && kept.instance === instance) {
+				host.id = kept.idle;
+				kept.idle = 0;
+				if (x.psh_shell_renew(host.id) !== 0) throw new EngineError("psh lost a kept shell");
+			} else {
+				const bytes = kept ? kept.config : config(options);
+				host.id = enter(instance, host, () => x.psh_shell_new(input(instance, bytes)));
+			}
+			if (host.id === 0) throw new EngineError("psh refused the shell configuration");
+			instance.shells.set(host.id, host);
+			const started = x.psh_shell_start(host.id, input(instance, start(options)));
+			if (started !== 0) throw new EngineError("psh refused the script (" + started + ")");
+		} catch (error) {
+			if (host.id) release$1(instance, host);
+			const failure = broken(module, instance, error);
+			if (failure === memoryExceeded) return exceeded();
+			throw failure;
+		}
+		if (options.signal.aborted) host.cancel();
+		options.signal.addEventListener("abort", host.cancel, { once: true });
+		try {
+			for (;;) {
+				host.woken = false;
+				const step = enter(instance, host, () => x.psh_shell_step(host.id, budget));
+				if (instance.failure !== void 0) throw failed(instance);
+				if (step === 0) break;
+				if (step === -1) {
+					if (!host.woken) await new Promise((resolve) => host.waiting = resolve);
+					if (instance.failure !== void 0) throw failed(instance);
+					continue;
+				}
+				if (step !== -2) throw new EngineError("psh step answered " + step);
+				const pause = breathe();
+				if (pause) await pause;
+			}
+			host.finished = true;
+			if (x.psh_shell_result(host.id) !== 1) throw new EngineError("psh kept no result");
+			const ran = result(instance, host);
+			if (host.failure !== void 0) throw host.failure;
+			return ran;
+		} catch (error) {
+			const failure = broken(module, instance, error);
+			if (failure === memoryExceeded) return exceeded();
+			throw failure;
+		} finally {
+			options.signal.removeEventListener("abort", host.cancel);
+			release$1(instance, host);
+		}
+	}
+	function runNow(instance, options) {
+		if (instance.failure !== void 0) throw failed(instance);
+		const x = instance.exports;
+		const host = {
+			cancel: () => {
+				if (instance.failure === void 0 && instance.shells.has(host.id)) x.psh_shell_cancel(host.id);
+			},
+			failure: void 0,
+			finished: false,
+			halted: void 0,
+			id: 0,
+			options,
+			timers: /* @__PURE__ */ new Set(),
+			waiting: void 0,
+			woken: false
+		};
+		try {
+			x.psh_memory_limit(options.limits.memory < 2 ** 32 ? options.limits.memory : 0);
+			host.id = enter(instance, host, () => x.psh_shell_new(input(instance, config(options))));
+			if (host.id === 0) throw new EngineError("psh refused the shell configuration");
+			instance.shells.set(host.id, host);
+			const started = x.psh_shell_start(host.id, input(instance, start(options)));
+			if (started !== 0) throw new EngineError("psh refused the script (" + started + ")");
+			for (;;) {
+				if (options.signal.aborted) host.cancel();
+				const step = enter(instance, host, () => x.psh_shell_step(host.id, budget));
+				if (instance.failure !== void 0) throw failed(instance);
+				if (step === 0) break;
+				if (step === -1) return void 0;
+				if (step !== -2) throw new EngineError("psh step answered " + step);
+			}
+			host.finished = true;
+			if (x.psh_shell_result(host.id) !== 1) throw new EngineError("psh kept no result");
+			const ran = result(instance, host);
+			if (host.failure !== void 0) throw host.failure;
+			return ran;
+		} catch (error) {
+			const failure = broken(instance.module, instance, error);
+			if (failure === memoryExceeded) return exceeded();
+			throw failure;
+		} finally {
+			if (host.id) release$1(instance, host);
+		}
+	}
+	function identity(env) {
+		return {
+			group: env.USER ?? "user",
+			home: env.HOME ?? "/",
+			hostname: "localhost",
+			hosttype: "x86_64",
+			machtype: "x86_64-pc-linux-gnu",
+			ostype: "linux-gnu",
+			pid: 1,
+			release: "6.0.0",
+			uid: 1e3,
+			user: env.USER ?? "user",
+			version: "#1 SMP"
+		};
+	}
+	function enter(instance, host, body) {
+		const outer = instance.current;
+		instance.current = host;
+		try {
+			return body();
+		} finally {
+			instance.current = outer;
+		}
+	}
+	const memoryExceeded = new EngineError("psh passed its memory budget");
+	function exceeded() {
+		return {
+			ended: "memory",
+			fuel: 0,
+			halted: void 0,
+			missing: [],
+			operations: 0,
+			status: 126,
+			stderr: empty,
+			stdout: empty,
+			truncated: false,
+			unanswered: ""
+		};
+	}
+	function broken(module, instance, error) {
+		if (instance.failure === memoryExceeded.message) return memoryExceeded;
+		if (error instanceof EngineError || !(error instanceof Error)) return error;
+		if (!(error instanceof WebAssembly.RuntimeError) && !(error instanceof RangeError)) return error;
+		const spent = (() => {
+			try {
+				return instance.exports.psh_memory_exceeded() === 1;
+			} catch {
+				return false;
+			}
+		})();
+		const message = spent ? memoryExceeded.message : "psh stopped: " + (instance.failure ?? error.message);
+		instance.failure = message;
+		instances$2.delete(module);
+		for (const other of instance.shells.values()) wake(other);
+		return spent ? memoryExceeded : new EngineError(message);
+	}
+	function failed(instance) {
+		return instance.failure === memoryExceeded.message ? memoryExceeded : new EngineError(instance.failure);
+	}
+	function release$1(instance, host) {
+		for (const timer of host.timers) clearTimeout(timer);
+		host.timers.clear();
+		instance.shells.delete(host.id);
+		if (instance.failure !== void 0) return;
+		const kept = host.options.kept;
+		if (kept && host.finished && !kept.idle) {
+			kept.idle = host.id;
+			kept.instance = instance;
+			return;
+		}
+		try {
+			instance.exports.psh_shell_free(host.id);
+		} catch (error) {
+			instance.failure = "psh stopped: " + (error instanceof Error ? error.message : String(error));
+		}
+	}
+	function wake(host) {
+		host.woken = true;
+		const waiting = host.waiting;
+		host.waiting = void 0;
+		waiting?.();
+	}
+	function memory(instance) {
+		if (instance.view.byteLength === 0) instance.view = new Uint8Array(instance.exports.memory.buffer);
+		return instance.view;
+	}
+	function input(instance, data) {
+		const ptr = instance.exports.psh_in(data.length) >>> 0;
+		memory(instance).set(data, ptr);
+		return data.length;
+	}
+	function answer$1(instance, op, reply) {
+		if (instance.failure !== void 0) return;
+		try {
+			instance.exports.psh_complete(op, reply.err, input(instance, reply.data));
+		} catch (error) {
+			instance.failure = "psh stopped: " + (error instanceof Error ? error.message : String(error));
+			for (const host of instance.shells.values()) wake(host);
+		}
+	}
+	function hostCall$1(instance, call) {
+		const payload = () => memory(instance).slice(call.ptr, call.ptr + call.len);
+		switch (call.kind) {
+			case kind.fs: {
+				const host = instance.current;
+				if (!host) throw new EngineError("psh asked for a file outside a step");
+				const asked = operation({
+					operation: call.arg,
+					payload: memory(instance).subarray(call.ptr, call.ptr + call.len)
+				});
+				const sync = host.options.fs.sync;
+				if (sync) try {
+					return performNow(instance, {
+						fs: sync,
+						host,
+						operation: asked
+					});
+				} catch (error) {
+					return -code(host, error);
+				}
+				perform(host, asked).then((data) => answer$1(instance, call.op, {
+					data: data ?? empty,
+					err: 0
+				}), (error) => answer$1(instance, call.op, {
+					data: empty,
+					err: code(host, error)
+				}));
+				return later;
+			}
+			case kind.sleep: {
+				const host = instance.current;
+				const timer = setTimeout(() => {
+					host?.timers.delete(timer);
+					answer$1(instance, call.op, {
+						data: empty,
+						err: 0
+					});
+				}, call.arg);
+				host?.timers.add(timer);
+				return 0;
+			}
+			case kind.now:
+				clock.setFloat64(0, Date.now(), true);
+				return input(instance, clockBytes);
+			case kind.random: {
+				const bytes = new Uint8Array(call.len);
+				for (let at = 0; at < bytes.length; at += 65536) crypto.getRandomValues(bytes.subarray(at, at + 65536));
+				return input(instance, bytes);
+			}
+			case kind.has: {
+				const host = instance.current;
+				if (!host) return 0;
+				return has(host, text$3.decode(memory(instance).subarray(call.ptr, call.ptr + call.len))) ? 1 : 0;
+			}
+			case kind.spawn: {
+				const host = instance.current;
+				if (!host) throw new EngineError("psh started a command outside a step");
+				spawn$1(instance, {
+					host,
+					payload: payload(),
+					pid: call.arg
+				});
+				return 0;
+			}
+			case kind.kill: {
+				const proc = instance.procs.get(call.arg);
+				if (proc) stop(instance, {
+					pid: call.arg,
+					proc
+				});
+				return 0;
+			}
+			case kind.done: {
+				const resolve = instance.requests.get(call.op);
+				instance.requests.delete(call.op);
+				resolve?.({
+					data: payload(),
+					end: (call.arg & readEnd) !== 0,
+					err: call.arg & 65535
+				});
+				return 0;
+			}
+			case kind.wake: {
+				const host = instance.shells.get(call.arg);
+				if (host) wake(host);
+				return 0;
+			}
+			case kind.panic:
+				instance.failure = "psh stopped: " + text$3.decode(payload());
+				return 0;
+			case kind.utcOffset: return 0;
+			default: throw new EngineError("psh asked for an unknown operation " + call.kind);
+		}
+	}
+	function code(host, error) {
+		if (error instanceof FsError) return errno$1[error.code] ?? errno$1.EIO;
+		if (error instanceof MachineError) {
+			halt(host, error.message);
+			return errno$1.EIO;
+		}
+		host.failure ??= error;
+		host.cancel();
+		return errno$1.EIO;
+	}
+	function reader(data) {
+		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		let at = 0;
+		const u32 = () => {
+			const value = view.getUint32(at, true);
+			at += 4;
+			return value;
+		};
+		return {
+			bytes: () => {
+				const length = u32();
+				at += length;
+				return data.subarray(at - length, at);
+			},
+			f64: () => {
+				const value = view.getFloat64(at, true);
+				at += 8;
+				return value;
+			},
+			rest: () => data.subarray(at),
+			u32
+		};
+	}
+	let scratch = /* @__PURE__ */ new Uint8Array(1024);
+	let scratchView = new DataView(scratch.buffer);
+	function writer() {
+		let buffer = scratch;
+		let view = scratchView;
+		let at = 0;
+		const room = (length) => {
+			if (at + length <= buffer.length) return;
+			const grown = new Uint8Array(Math.max(buffer.length * 2, at + length));
+			grown.set(buffer.subarray(0, at));
+			buffer = scratch = grown;
+			view = scratchView = new DataView(buffer.buffer);
+		};
+		const u32 = (value) => {
+			room(4);
+			view.setUint32(at, value, true);
+			at += 4;
+		};
+		const bytes = (value) => {
+			room(4 + value.length);
+			view.setUint32(at, value.length, true);
+			buffer.set(value, at + 4);
+			at += 4 + value.length;
+		};
+		return {
+			bytes,
+			done: () => buffer.subarray(0, at),
+			f64: (value) => {
+				room(8);
+				view.setFloat64(at, value, true);
+				at += 8;
+			},
+			string: (value) => {
+				room(4 + value.length * 3);
+				const written = utf8.encodeInto(value, buffer.subarray(at + 4)).written;
+				view.setUint32(at, written, true);
+				at += 4 + written;
+			},
+			u32
+		};
+	}
+	function config(options) {
+		const out = writer();
+		out.string(options.cwd);
+		const env = Object.entries(options.env);
+		out.u32(env.length);
+		for (const [name, value] of env) {
+			out.string(name);
+			out.bytes(encode(value));
+		}
+		out.f64(options.limits.fuel);
+		out.f64(options.limits.output);
+		out.f64(options.limits.file);
+		out.f64(options.limits.operations);
+		out.u32(options.limits.depth);
+		out.u32(options.strict ? 1 : 0);
+		const identity = options.identity;
+		out.u32(identity.uid);
+		out.u32(identity.pid);
+		for (const value of [
+			identity.user,
+			identity.group,
+			identity.home,
+			identity.hostname,
+			identity.ostype,
+			identity.machtype,
+			identity.hosttype,
+			identity.release,
+			identity.version
+		]) out.string(value);
+		out.u32(options.without.length);
+		for (const name of options.without) out.string(name);
+		const machine = options.machine;
+		out.u32(machine ? 1 : 0);
+		if (machine) {
+			out.u32(machine.size);
+			for (const name of machine) out.string(name);
+			const variables = [...env.map((entry) => entry[0]), ...machineVariables];
+			out.u32(variables.length);
+			for (const name of variables) out.string(name);
+		}
+		return out.done();
+	}
+	function start(options) {
+		const out = writer();
+		if (plain(options.script)) out.string(options.script);
+		else out.bytes(encode(options.script));
+		out.string("/bin/bash");
+		out.u32(0);
+		out.u32(0);
+		out.u32(options.stdin ? 1 : 0);
+		if (options.stdin) out.bytes(options.stdin);
+		return out.done();
+	}
+	function result(instance, host) {
+		const x = instance.exports;
+		const ptr = x.psh_out_ptr() >>> 0;
+		const data = reader(memory(instance).slice(ptr, ptr + (x.psh_out_len() >>> 0)));
+		const how = ended[data.u32()];
+		if (!how) throw new EngineError("psh ended a run in an unknown way");
+		const status = data.u32() | 0;
+		const truncated = data.u32() !== 0;
+		const fuel = data.f64();
+		const operations = data.f64();
+		const stdout = data.bytes();
+		const stderr = data.bytes();
+		const missing = [];
+		for (let left = data.u32(); left > 0; left--) missing.push(text$3.decode(data.bytes()));
+		const unanswered = text$3.decode(data.bytes());
+		return {
+			ended: how,
+			fuel,
+			halted: host.halted,
+			missing,
+			operations,
+			status,
+			stderr,
+			stdout,
+			truncated,
+			unanswered
+		};
+	}
+	function operation(call) {
+		const out = {
+			data: empty,
+			mode: 0,
+			mtime: 0,
+			operation: call.operation,
+			other: "",
+			path: ""
+		};
+		switch (call.operation) {
+			case fsOp.writeReplace:
+			case fsOp.writeAppend:
+			case fsOp.writeNew: {
+				const fields = reader(call.payload);
+				out.path = text$3.decode(fields.bytes());
+				out.data = fields.rest().slice();
+				return out;
+			}
+			case fsOp.mkdir:
+			case fsOp.setMode: {
+				const fields = reader(call.payload);
+				out.mode = fields.u32();
+				out.path = text$3.decode(fields.rest());
+				return out;
+			}
+			case fsOp.rename:
+			case fsOp.symlink: {
+				const fields = reader(call.payload);
+				out.other = text$3.decode(fields.bytes());
+				out.path = text$3.decode(fields.rest());
+				return out;
+			}
+			case fsOp.setMtime: {
+				const fields = reader(call.payload);
+				out.mtime = fields.f64();
+				out.path = text$3.decode(fields.rest());
+				return out;
+			}
+			default:
+				out.path = text$3.decode(call.payload);
+				return out;
+		}
+	}
+	function refuse(name, path) {
+		throw new FsError(name, path);
+	}
+	function statBytes(found) {
+		stat$1.setFloat64(0, found.size, true);
+		stat$1.setFloat64(8, found.mtime, true);
+		stat$1.setUint32(16, found.mode, true);
+		stat$1.setUint32(20, found.kind === "file" ? 0 : found.kind === "directory" ? 1 : 2, true);
+		return statView;
+	}
+	function removable(stat, call) {
+		if (!stat) return refuse("ENOENT", call.path);
+		const directory = stat.kind === "directory";
+		if (call.operation === fsOp.removeFile && directory) return refuse("EISDIR", call.path);
+		if (call.operation === fsOp.removeDir && !directory) return refuse("ENOTDIR", call.path);
+	}
+	async function perform(host, call) {
+		const fs = host.options.fs;
+		const path = call.path;
+		switch (call.operation) {
+			case fsOp.stat:
+			case fsOp.lstat: {
+				const found = call.operation === fsOp.lstat && fs.lstat ? await fs.lstat(path) : await fs.stat(path);
+				return found ? statBytes(found).slice() : refuse("ENOENT", path);
+			}
+			case fsOp.read: {
+				const data = await fs.read(path);
+				if (data.length > host.options.limits.file) return refuse("EFBIG", path);
+				return data;
+			}
+			case fsOp.writeNew:
+				if (await fs.stat(path)) return refuse("EEXIST", path);
+				await fs.write(path, call.data);
+				return;
+			case fsOp.writeReplace:
+			case fsOp.writeAppend:
+				await fs.write(path, call.data, call.operation === fsOp.writeAppend);
+				return;
+			case fsOp.list: return utf8.encode((await fs.list(path)).join("\0"));
+			case fsOp.mkdir:
+				await fs.mkdir(path);
+				if (call.mode !== 493 && fs.chmod) await fs.chmod(path, call.mode);
+				return;
+			case fsOp.removeFile:
+			case fsOp.removeDir:
+				removable(fs.lstat ? await fs.lstat(path) : await fs.stat(path), call);
+				await fs.remove(path);
+				return;
+			case fsOp.rename:
+				await fs.rename(call.other, path);
+				return;
+			case fsOp.symlink:
+				if (!fs.symlink) return refuse("ENOTSUP", path);
+				await fs.symlink(call.other, path);
+				return;
+			case fsOp.readLink: {
+				if (!fs.readlink) return refuse("ENOTSUP", path);
+				const target = await fs.readlink(path);
+				if (target === null) return refuse("EINVAL", path);
+				return utf8.encode(target);
+			}
+			case fsOp.setMode:
+				if (!fs.chmod) return refuse("ENOTSUP", path);
+				await fs.chmod(path, call.mode);
+				return;
+			case fsOp.setMtime:
+				if (!fs.utimes) return refuse("ENOTSUP", path);
+				await fs.utimes(path, call.mtime);
+				return;
+			default: throw new EngineError("psh asked for an unknown file operation " + call.operation);
+		}
+	}
+	function performNow(instance, call) {
+		const fs = call.fs;
+		const op = call.operation;
+		const path = op.path;
+		switch (op.operation) {
+			case fsOp.stat:
+			case fsOp.lstat: {
+				const found = op.operation === fsOp.lstat && fs.lstat ? fs.lstat(path) : fs.stat(path);
+				return found ? input(instance, statBytes(found)) : -errno$1.ENOENT;
+			}
+			case fsOp.read: {
+				const data = fs.read(path);
+				if (data.length > call.host.options.limits.file) return -errno$1.EFBIG;
+				return input(instance, data);
+			}
+			case fsOp.writeNew:
+				if (fs.stat(path)) return -errno$1.EEXIST;
+				fs.write(path, op.data);
+				return 0;
+			case fsOp.writeReplace:
+			case fsOp.writeAppend:
+				fs.write(path, op.data, op.operation === fsOp.writeAppend);
+				return 0;
+			case fsOp.list: return input(instance, utf8.encode(fs.list(path).join("\0")));
+			case fsOp.mkdir:
+				fs.mkdir(path);
+				if (op.mode !== 493 && fs.chmod) fs.chmod(path, op.mode);
+				return 0;
+			case fsOp.removeFile:
+			case fsOp.removeDir:
+				removable(fs.lstat ? fs.lstat(path) : fs.stat(path), op);
+				fs.remove(path);
+				return 0;
+			case fsOp.rename:
+				fs.rename(op.other, path);
+				return 0;
+			case fsOp.symlink:
+				if (!fs.symlink) return -errno$1.ENOTSUP;
+				fs.symlink(op.other, path);
+				return 0;
+			case fsOp.readLink: {
+				if (!fs.readlink) return -errno$1.ENOTSUP;
+				const target = fs.readlink(path);
+				return target === null ? -errno$1.EINVAL : input(instance, utf8.encode(target));
+			}
+			case fsOp.setMode:
+				if (!fs.chmod) return -errno$1.ENOTSUP;
+				fs.chmod(path, op.mode);
+				return 0;
+			case fsOp.setMtime:
+				if (!fs.utimes) return -errno$1.ENOTSUP;
+				fs.utimes(path, op.mtime);
+				return 0;
+			default: throw new EngineError("psh asked for an unknown file operation " + op.operation);
+		}
+	}
+	function has(host, name) {
+		if (name.includes("/")) return name.endsWith(".wasm") && host.options.commands.has("wasm");
+		return host.options.commands.has(name);
+	}
+	function abort(proc) {
+		proc.aborted = true;
+		proc.controller?.abort();
+		proc.feed?.close();
+	}
+	function signalOf(proc) {
+		proc.controller ??= new AbortController();
+		if (proc.aborted) proc.controller.abort();
+		return proc.controller.signal;
+	}
+	function stop(instance, entry) {
+		const proc = entry.proc;
+		proc.live = false;
+		instance.procs.delete(entry.pid);
+		abort(proc);
+		for (const request of proc.pending) {
+			const resolve = instance.requests.get(request);
+			instance.requests.delete(request);
+			resolve?.({
+				data: empty,
+				end: true,
+				err: errno$1.EPIPE
+			});
+		}
+		proc.pending.clear();
+	}
+	function spawn$1(instance, options) {
+		const fields = reader(options.payload);
+		const argv = [];
+		for (let left = fields.u32(); left > 0; left--) argv.push(decode(fields.bytes()));
+		const pairs = [];
+		for (let left = fields.u32(); left > 0; left--) pairs.push([fields.bytes(), fields.bytes()]);
+		const cwd = text$3.decode(fields.bytes());
+		const captured = fields.u32();
+		const proc = {
+			aborted: false,
+			controller: void 0,
+			feed: void 0,
+			host: options.host,
+			live: true,
+			pending: /* @__PURE__ */ new Set()
+		};
+		instance.procs.set(options.pid, proc);
+		Promise.resolve().then(() => command(instance, {
+			argv,
+			captured,
+			cwd,
+			pairs,
+			pid: options.pid,
+			proc
+		})).catch((error) => {
+			if (proc.aborted) return 143;
+			options.host.failure ??= error;
+			options.host.cancel();
+			return 1;
+		}).then((status) => {
+			if (!proc.live || instance.failure !== void 0) return;
+			proc.live = false;
+			instance.procs.delete(options.pid);
+			try {
+				instance.exports.psh_proc_exit(options.pid, status);
+			} catch (error) {
+				instance.failure = "psh stopped: " + (error instanceof Error ? error.message : String(error));
+				for (const host of instance.shells.values()) wake(host);
+			}
+		});
+	}
+	function ask(instance, options) {
+		if (!options.proc.live || instance.failure !== void 0) return Promise.resolve({
+			data: empty,
+			end: true,
+			err: errno$1.EPIPE
+		});
+		return new Promise((resolve) => {
+			const request = instance.nextRequest++;
+			instance.requests.set(request, (reply) => {
+				options.proc.pending.delete(request);
+				resolve(reply);
+			});
+			options.proc.pending.add(request);
+			try {
+				options.send(request);
+			} catch (error) {
+				instance.failure = "psh stopped: " + (error instanceof Error ? error.message : String(error));
+				for (const host of instance.shells.values()) wake(host);
+				instance.requests.delete(request);
+				resolve({
+					data: empty,
+					end: true,
+					err: errno$1.EPIPE
+				});
+			}
+		});
+	}
+	function halt(host, message) {
+		host.halted ??= message;
+		host.cancel();
+		return 127;
+	}
+	function quote$4(word) {
+		return "'" + word.replaceAll("'", "'\\''") + "'";
+	}
+	async function command(instance, call) {
+		const proc = call.proc;
+		const host = proc.host;
+		const options = host.options;
+		const x = instance.exports;
+		const first = call.argv[0] ?? "";
+		const path = first.includes("/");
+		const name = path ? "wasm" : first;
+		const handler = options.commands.get(name);
+		if (!handler) return 127;
+		if (options.strict && !options.fetch && (name === "curl" || name === "wget")) return halt(host, name + ": network access is not available in this shell");
+		if (options.strict && name === "file") return halt(host, "file: (this simulated shell has no libmagic database of file types)");
+		let finishing = false;
+		const write = async (fd, chunk) => {
+			if (finishing) {
+				if (proc.live && instance.failure === void 0) x.psh_proc_write(call.pid, 0, fd, input(instance, encode(chunk)));
+				return;
+			}
+			if ((await ask(instance, {
+				proc,
+				send: (request) => x.psh_proc_write(call.pid, request, fd, input(instance, encode(chunk)))
+			})).err) throw new PipeError();
+		};
+		const limits = options.shellLimits;
+		const feed = new Pipe(limits.maxBufferLength, void 0, limits.maxMemoryBytes, async () => {
+			const reply = await ask(instance, {
+				proc,
+				send: (request) => x.psh_proc_read(call.pid, request, readBytes)
+			});
+			if (!reply.err && reply.data.length) feed.push(decode(reply.data));
+			if (reply.err || reply.end || !reply.data.length) feed.end();
+		});
+		proc.feed = feed;
+		const stdin = call.captured & 4 ? Input.machine() : Input.pipe(feed);
+		const output = (fd) => Output.spill(limits.maxBufferLength, (chunk) => write(fd, chunk), (call.captured & fd) === 0);
+		const stdout = output(1);
+		const stderr = output(2);
+		let env;
+		const environment = () => {
+			if (env) return env;
+			env = {};
+			for (const [name, value] of call.pairs) env[text$3.decode(name)] = decode(value);
+			return env;
+		};
+		const nested = async (script, given) => {
+			await stdout.settle();
+			await stderr.settle();
+			return run$1(instance.module, {
+				...options,
+				cwd: call.cwd,
+				env: environment(),
+				kept: void 0,
+				script,
+				signal: signalOf(proc),
+				stdin: given === void 0 ? void 0 : encode(given)
+			});
+		};
+		const context = {
+			args: path ? call.argv : call.argv.slice(1),
+			cwd: call.cwd,
+			get env() {
+				return environment();
+			},
+			set env(value) {
+				env = value;
+			},
+			exec: async (script, given) => {
+				const ran = await nested(script, given);
+				if (ran.stderr.length) stderr.write(decode(ran.stderr));
+				return {
+					status: ran.status,
+					stdout: decode(ran.stdout)
+				};
+			},
+			fetch: options.fetch,
+			fs: options.commandFs,
+			limits,
+			name,
+			resolve: (target) => resolvePath(call.cwd, target),
+			run: async (argv, given) => {
+				const ran = await nested(argv.map(quote$4).join(" "), given);
+				if (ran.stdout.length) stdout.write(decode(ran.stdout));
+				if (ran.stderr.length) stderr.write(decode(ran.stderr));
+				return ran.status;
+			},
+			get signal() {
+				return signalOf(proc);
+			},
+			sleep: (ms) => new Promise((resolve) => {
+				const timer = setTimeout(resolve, ms);
+				signalOf(proc).addEventListener("abort", () => {
+					clearTimeout(timer);
+					resolve();
+				}, { once: true });
+			}),
+			stderr,
+			stdin,
+			stdout,
+			umask: 18
+		};
+		let status;
+		try {
+			if (!stdin.ready && buffered(name, {
+				commands: options.commands,
+				handler
+			})) await stdin.fill();
+			status = await handler(context) ?? 0;
+		} catch (error) {
+			status = await (async () => {
+				if (error instanceof PipeError) return 141;
+				if (error instanceof ExitSignal$1) return error.status;
+				const message = error instanceof Error ? error.message : String(error);
+				if (error instanceof MachineError) return halt(host, message);
+				if (error instanceof LimitError) {
+					stderr.write("bash: " + message + "\n");
+					return error.status;
+				}
+				if (options.strict && UNSUPPORTED.test(message)) return halt(host, name + ": " + message + " (this simulated shell has no support for this)");
+				stderr.write(name + ": " + message + "\n");
+				return error instanceof CommandError ? error.status : 1;
+			})();
+		}
+		try {
+			await stdout.drain();
+			await stderr.drain();
+			finishing = true;
+			await stdout.settle();
+			await stderr.settle();
+		} catch (error) {
+			if (!(error instanceof PipeError)) throw error;
+			status = 141;
+		}
+		return status;
+	}
+	// src/bash/internal/Prune.ts
 	function inside(path, point) {
 		return path === point || path.startsWith(point + "/");
 	}
@@ -7039,6 +8108,7 @@ var NanocodeBash = (function(exports) {
 		return i;
 	}
 	// src/bash/internal/commands/util.ts
+	init_Shell();
 	init_FileSystem();
 	init_Fs();
 	function linked(ctx) {
@@ -7158,7 +8228,7 @@ var NanocodeBash = (function(exports) {
 		const stat = size === void 0 ? await ctx.fs.stat(path) : null;
 		const special = size !== void 0 || !stat ? device$1(path, size) : void 0;
 		if (special !== void 0) return special;
-		if (stat) budget(ctx.limits, 2 * stat.size, ctx.name + ": " + operand);
+		if (stat) budget$1(ctx.limits, 2 * stat.size, ctx.name + ": " + operand);
 		return decode(await ctx.fs.read(path));
 	}
 	const escapes$1 = {
@@ -7209,7 +8279,7 @@ var NanocodeBash = (function(exports) {
 		const path = ctx.resolve(operand);
 		try {
 			const stat = await ctx.fs.stat(path);
-			if (stat) budget(ctx.limits, 2 * stat.size, ctx.name + ": " + operand);
+			if (stat) budget$1(ctx.limits, 2 * stat.size, ctx.name + ": " + operand);
 			return await ctx.fs.read(path);
 		} catch (error) {
 			if (!(error instanceof FsError)) throw error;
@@ -7237,7 +8307,7 @@ var NanocodeBash = (function(exports) {
 		let size = 0;
 		const status = await eachInput(ctx, operands, (chunk) => {
 			size += chunk.length;
-			budget(ctx.limits, size, ctx.name + ": its input");
+			budget$1(ctx.limits, size, ctx.name + ": its input");
 			parts.push(chunk);
 		});
 		return {
@@ -7284,7 +8354,7 @@ var NanocodeBash = (function(exports) {
 				const found = (tail + chunk).lastIndexOf(separator);
 				const text = carry ? carry + chunk : chunk;
 				if (found < 0) {
-					if (limits && text.length > 1 << 20) budget(limits, 2 * text.length, "a line of " + text.length + " characters");
+					if (limits && text.length > 1 << 20) budget$1(limits, 2 * text.length, "a line of " + text.length + " characters");
 					carry = text;
 					continue;
 				}
@@ -8469,7 +9539,7 @@ var NanocodeBash = (function(exports) {
 			}
 		};
 		const write = async (next, total) => {
-			budget(ctx.limits, length + 8 * n + (out === void 0 ? 0 : 2 * length), "sort: " + n + " lines");
+			budget$1(ctx.limits, length + 8 * n + (out === void 0 ? 0 : 2 * length), "sort: " + n + " lines");
 			const parts = [];
 			let chunk = "";
 			let previous = -1;
@@ -8491,14 +9561,14 @@ var NanocodeBash = (function(exports) {
 		};
 		let duplicate = (a, b) => textCompare(a, b) === 0;
 		if (!order.numeric) {
-			budget(ctx.limits, length + 8 * n, "sort: " + n + " lines");
+			budget$1(ctx.limits, length + 8 * n, "sort: " + n + " lines");
 			const positions = new Uint32Array(n);
 			starts((start, _end, index) => void (positions[index] = start));
 			mergeSort(positions, (a, b) => sign * textCompare(a, b));
 			await write((i) => positions[i], n);
 			return;
 		}
-		budget(ctx.limits, length + 8 * n, "sort: " + n + " lines");
+		budget$1(ctx.limits, length + 8 * n, "sort: " + n + " lines");
 		const packed = new BigInt64Array(n);
 		const words = new Int32Array(packed.buffer);
 		let integral = true;
@@ -8541,7 +9611,7 @@ var NanocodeBash = (function(exports) {
 			await write((i) => words[2 * i] >>> 0, n);
 			return;
 		}
-		budget(ctx.limits, length + 20 * n, "sort: " + n + " lines");
+		budget$1(ctx.limits, length + 20 * n, "sort: " + n + " lines");
 		const positions = new Uint32Array(n);
 		const keys = new Float64Array(n);
 		starts((start, end, index) => {
@@ -8601,7 +9671,7 @@ var NanocodeBash = (function(exports) {
 			}, last(parsed, "o"));
 			return status;
 		}
-		budget(ctx.limits, 2 * text.length + 160 * lineCount(text, f.has("z") ? "\0" : "\n"), "sort: " + lineCount(text, f.has("z") ? "\0" : "\n") + " lines");
+		budget$1(ctx.limits, 2 * text.length + 160 * lineCount(text, f.has("z") ? "\0" : "\n"), "sort: " + lineCount(text, f.has("z") ? "\0" : "\n") + " lines");
 		const items = f.has("z") ? text.split("\0").filter((item, index, all) => item !== "" || index < all.length - 1) : lines$1(text);
 		const separator = last(parsed, "t");
 		const keys = (parsed.values.get("k") ?? []).map(parseKey);
@@ -8920,7 +9990,7 @@ var NanocodeBash = (function(exports) {
 	};
 	function trSet(spec) {
 		const out = [];
-		const text = bytewise(spec.replace(/\\([0-7]{1,3}|[\s\S])/g, (_, body) => /^[0-7]/.test(body) ? byte(parseInt(body, 8)) : TR_ESCAPES[body] ?? body));
+		const text = bytewise(spec.replace(/\\([0-7]{1,3}|[\s\S])/g, (_, body) => /^[0-7]/.test(body) ? byte$1(parseInt(body, 8)) : TR_ESCAPES[body] ?? body));
 		for (let i = 0; i < text.length; i++) {
 			const cls = text.slice(i).match(/^\[:(\w+):\]/);
 			if (cls && CLASS_CHARS[cls[1]]) {
@@ -9132,7 +10202,7 @@ var NanocodeBash = (function(exports) {
 				await put(ctx, out);
 				return;
 			}
-			budget(ctx.limits, 2 * text.length + 40 * lineCount(text, separator), "tac: its input");
+			budget$1(ctx.limits, 2 * text.length + 40 * lineCount(text, separator), "tac: its input");
 			const parts = text.split(separator);
 			const tail = parts.pop();
 			const records = parsed.flags.has("b") ? parts.map((part, index) => (index ? separator : "") + part) : parts.map((part) => part + separator);
@@ -9694,7 +10764,7 @@ var NanocodeBash = (function(exports) {
 		await ctx.sleep(total);
 		return 0;
 	};
-	const base64$2 = async (ctx) => {
+	const base64$1 = async (ctx) => {
 		const parsed = options(ctx.args, {
 			flags: "di",
 			values: "w",
@@ -9726,7 +10796,7 @@ var NanocodeBash = (function(exports) {
 			if (!(bad < 0 && body.length % 4 === 0 ? trailing === "" : bad < 0 && (body.length % 4 === 2 && /^==$/.test(trailing) || body.length % 4 === 3 && trailing === "=" || trailing === "" && body.length % 4 === 0))) throw new CommandError("invalid input");
 			return 0;
 		}
-		budget(ctx.limits, 4 * bytes.length, "base64: its input");
+		budget$1(ctx.limits, 4 * bytes.length, "base64: its input");
 		const encoded = toBase64(bytes);
 		const wrap = Number(last(parsed, "w") ?? 76);
 		if (!(wrap > 0)) {
@@ -10008,7 +11078,7 @@ var NanocodeBash = (function(exports) {
 		let size = 0;
 		const status = await eachInput(ctx, parsed.operands, (text) => {
 			size += text.length;
-			budget(ctx.limits, size, ctx.name + ": its input");
+			budget$1(ctx.limits, size, ctx.name + ": its input");
 			for (const row of lines$1(text)) rows.push(row);
 		});
 		if (!parsed.flags.has("t") && !parsed.flags.has("J")) {
@@ -10205,7 +11275,7 @@ var NanocodeBash = (function(exports) {
 		xargs,
 		date: date$1,
 		sleep,
-		base64: base64$2,
+		base64: base64$1,
 		sha256sum: digest("SHA-256"),
 		sha1sum: digest("SHA-1"),
 		sha512sum: digest("SHA-512"),
@@ -11582,7 +12652,7 @@ var NanocodeBash = (function(exports) {
 		}
 		set(key, value) {
 			this.materialize();
-			if ((super.size & 65535) === 65535 && AwkArray.limits) budget(AwkArray.limits, 100 * super.size, "awk: an array of " + super.size + " elements");
+			if ((super.size & 65535) === 65535 && AwkArray.limits) budget$1(AwkArray.limits, 100 * super.size, "awk: an array of " + super.size + " elements");
 			return super.set(key, value);
 		}
 		delete(key) {
@@ -12389,7 +13459,7 @@ var NanocodeBash = (function(exports) {
 			return () => this.str(fn(), output);
 		}
 		grown(head, text) {
-			if (text.length >>> 20 !== head.length >>> 20) budget(this.ctx.limits, 4 * text.length, "awk: a string of " + text.length + " characters");
+			if (text.length >>> 20 !== head.length >>> 20) budget$1(this.ctx.limits, 4 * text.length, "awk: a string of " + text.length + " characters");
 			return text.length > 4096 && Math.clz32(text.length) < Math.clz32(head.length) ? flatten$1(text) : text;
 		}
 		pattern(e, scope) {
@@ -13981,7 +15051,7 @@ var NanocodeBash = (function(exports) {
 			else if (stat.kind !== "directory") throw new FsError("ENOTDIR", current);
 		}
 	}
-	function join$2(base, name) {
+	function join$4(base, name) {
 		return base === "/" ? "/" + name : base + "/" + name;
 	}
 	function visible(text, tabs) {
@@ -14251,7 +15321,7 @@ var NanocodeBash = (function(exports) {
 			}
 			for (const name of await ctx.fs.list(dir.path)) {
 				if (name.startsWith(".") && !f.has("a") && !f.has("A")) continue;
-				const path = join$2(dir.path, name);
+				const path = join$4(dir.path, name);
 				const stat = await look(path);
 				if (stat) entries.push({
 					name,
@@ -14425,7 +15495,7 @@ var NanocodeBash = (function(exports) {
 				status = 1;
 				continue;
 			}
-			const to = intoDirectory ? join$2(targetPath, baseOf(from)) : targetPath;
+			const to = intoDirectory ? join$4(targetPath, baseOf(from)) : targetPath;
 			if (from === to) {
 				ctx.stderr.write(name + ": '" + source + "' and '" + target + "' are the same file\n");
 				status = 1;
@@ -14452,7 +15522,7 @@ var NanocodeBash = (function(exports) {
 				if (parsed.flags.has("v")) ctx.stdout.write("'" + source + "' -> '" + to + "'\n");
 			} catch (error) {
 				if (error instanceof CommandError) throw error;
-				if (error instanceof FsError && error.code === "ENOENT" && !await ctx.fs.stat(parentOf(to))) ctx.stderr.write(move ? "mv: cannot move '" + source + "' to '" + (intoDirectory ? join$2(target, baseOf(from)) : target) + "': No such file or directory\n" : stat.kind === "directory" ? "cp: cannot create directory '" + (intoDirectory ? join$2(target, baseOf(from)) : target) + "': No such file or directory\n" : "cp: cannot create regular file '" + (intoDirectory ? join$2(target, baseOf(from)) : target) + "': No such file or directory\n");
+				if (error instanceof FsError && error.code === "ENOENT" && !await ctx.fs.stat(parentOf(to))) ctx.stderr.write(move ? "mv: cannot move '" + source + "' to '" + (intoDirectory ? join$4(target, baseOf(from)) : target) + "': No such file or directory\n" : stat.kind === "directory" ? "cp: cannot create directory '" + (intoDirectory ? join$4(target, baseOf(from)) : target) + "': No such file or directory\n" : "cp: cannot create regular file '" + (intoDirectory ? join$4(target, baseOf(from)) : target) + "': No such file or directory\n");
 				else ctx.stderr.write(name + ": cannot " + (move ? "move" : "copy") + " '" + source + "': " + failure(error) + "\n");
 				status = 1;
 			}
@@ -15066,7 +16136,7 @@ var NanocodeBash = (function(exports) {
 					status = 1;
 				}
 				const child = async (name) => {
-					const path = join$2(entry.path, name);
+					const path = join$4(entry.path, name);
 					const stat = follow ? await ctx.fs.stat(path) ?? await lstatOf(ctx, path) : await lstatOf(ctx, path);
 					if (!stat) return null;
 					return {
@@ -15271,7 +16341,7 @@ var NanocodeBash = (function(exports) {
 				...stat,
 				mode: next
 			}).slice(1) + ")" : "retained as " + next.toString(8).padStart(4, "0") + " (" + mode(stat).slice(1) + ")") + "\n");
-			if (recursive && stat.kind === "directory") for (const name of await fs.list(path)) await apply(join$2(path, name), display.replace(/\/$/, "") + "/" + name);
+			if (recursive && stat.kind === "directory") for (const name of await fs.list(path)) await apply(join$4(path, name), display.replace(/\/$/, "") + "/" + name);
 		};
 		let status = 0;
 		for (const operand of operands.slice(1)) {
@@ -15362,8 +16432,8 @@ var NanocodeBash = (function(exports) {
 			let sum = usage(stat);
 			for (const name of await ctx.fs.list(path)) {
 				if (excludes.some((glob) => glob.test(name))) continue;
-				const child = await walk(join$2(path, name), display.endsWith("/") ? display + name : display + "/" + name, level + 1);
-				const childStat = await lstatOf(ctx, join$2(path, name));
+				const child = await walk(join$4(path, name), display.endsWith("/") ? display + name : display + "/" + name, level + 1);
+				const childStat = await lstatOf(ctx, join$4(path, name));
 				if (!f.has("S") || childStat && childStat.kind !== "directory") sum += child;
 			}
 			if (level <= depth) ctx.stdout.write(show(sum) + "	" + display + terminator);
@@ -15588,7 +16658,7 @@ var NanocodeBash = (function(exports) {
 		});
 		return head + "\r\n";
 	}
-	async function request(ctx, transfer) {
+	async function request$1(ctx, transfer) {
 		if (!ctx.fetch) throw new TransferError(7, "network access is not available in this shell");
 		const controller = new AbortController();
 		const abort = () => controller.abort();
@@ -15928,7 +16998,7 @@ var NanocodeBash = (function(exports) {
 			}
 			let received;
 			try {
-				received = await request(ctx, {
+				received = await request$1(ctx, {
 					url,
 					method,
 					headers: requestHeaders,
@@ -16239,7 +17309,7 @@ var NanocodeBash = (function(exports) {
 			}
 			let received;
 			try {
-				received = await request(ctx, {
+				received = await request$1(ctx, {
 					url,
 					method,
 					headers: requestHeaders,
@@ -19501,7 +20571,7 @@ var NanocodeBash = (function(exports) {
 	async function bytesOf(ctx, operand) {
 		if (operand === "-") return encode(ctx.stdin.read());
 		const stat = await ctx.fs.stat(ctx.resolve(operand));
-		if (stat) budget(ctx.limits, 2 * stat.size, ctx.name + ": " + operand);
+		if (stat) budget$1(ctx.limits, 2 * stat.size, ctx.name + ": " + operand);
 		return ctx.fs.read(ctx.resolve(operand));
 	}
 	function compressor(mode) {
@@ -19581,7 +20651,7 @@ var NanocodeBash = (function(exports) {
 		if (stat.kind === "file") {
 			const total = (collected.get(entries) ?? 0) + stat.size + 512;
 			collected.set(entries, total);
-			budget(ctx.limits, 3 * total, "tar: " + entries.length + " files");
+			budget$1(ctx.limits, 3 * total, "tar: " + entries.length + " files");
 			entries.push({
 				name,
 				type: "file",
@@ -20192,7 +21262,7 @@ var NanocodeBash = (function(exports) {
 		].map((shift) => (word >>> shift & 255).toString(16).padStart(2, "0")).join("")).join("");
 	}
 	const md5sum = checksum(md5, "MD5");
-	const tree = async (ctx) => {
+	const tree$1 = async (ctx) => {
 		const parsed = options(ctx.args, {
 			flags: "adfFsCih",
 			values: "LIP",
@@ -20655,7 +21725,7 @@ var NanocodeBash = (function(exports) {
 			await ctx.fs.write(ctx.resolve(prefix + suffix + (last(parsed, "additional-suffix") ?? "")), chunk);
 		}
 	};
-	const join$1 = async (ctx) => {
+	const join$3 = async (ctx) => {
 		const parsed = options(ctx.args, {
 			flags: "i",
 			values: "t12aveoj",
@@ -21977,7 +23047,7 @@ zstd: *.zst, *.zstd
 			let count = 0;
 			for (let at = text.indexOf(separator); at >= 0; at = text.indexOf(separator, at + 1)) count++;
 			if (text && !text.endsWith(separator)) count++;
-			budget(ctx.limits, bytes + 8 * count, "shuf: " + count + " lines");
+			budget$1(ctx.limits, bytes + 8 * count, "shuf: " + count + " lines");
 			const starts = new Uint32Array(count);
 			for (let index = 0, start = 0; index < count; index++) {
 				starts[index] = start;
@@ -22007,7 +23077,7 @@ zstd: *.zst, *.zstd
 			if (size) for (let i = 0; i < (count ?? 1e3); i++) await emit(item(Math.floor(Math.random() * size)));
 			else if (count) throw new CommandError("no lines to repeat");
 		} else {
-			budget(ctx.limits, bytes + 12 * size, "shuf: " + size + " lines");
+			budget$1(ctx.limits, bytes + 12 * size, "shuf: " + size + " lines");
 			const pool = new Uint32Array(size);
 			for (let i = 0; i < size; i++) pool[i] = i;
 			for (let i = size - 1; i > 0; i--) {
@@ -22610,12 +23680,12 @@ zstd: *.zst, *.zstd
 		return status;
 	};
 	function writeIconv(ctx, text, target) {
-		if (target === "LATIN1" || target === "ISO88591" || target === "CP1252" || target === "WINDOWS1252") ctx.stdout.write(Array.from(text, (char) => byte(char.codePointAt(0))).join(""));
+		if (target === "LATIN1" || target === "ISO88591" || target === "CP1252" || target === "WINDOWS1252") ctx.stdout.write(Array.from(text, (char) => byte$1(char.codePointAt(0))).join(""));
 		else if (target.startsWith("UTF16")) {
-			let out = target === "UTF16" ? byte(255) + byte(254) : "";
+			let out = target === "UTF16" ? byte$1(255) + byte$1(254) : "";
 			for (let i = 0; i < text.length; i++) {
 				const code = text.charCodeAt(i);
-				out += target === "UTF16BE" ? byte(code >> 8) + byte(code & 255) : byte(code & 255) + byte(code >> 8);
+				out += target === "UTF16BE" ? byte$1(code >> 8) + byte$1(code & 255) : byte$1(code & 255) + byte$1(code >> 8);
 			}
 			ctx.stdout.write(out);
 		} else ctx.stdout.write(text);
@@ -23906,7 +24976,7 @@ zstd: *.zst, *.zstd
 		iconv,
 		id,
 		install,
-		join: join$1,
+		join: join$3,
 		kill,
 		ln,
 		make,
@@ -23920,7 +24990,7 @@ zstd: *.zst, *.zstd
 		tar,
 		time,
 		timeout,
-		tree,
+		tree: tree$1,
 		truncate,
 		unexpand,
 		which,
@@ -23938,7 +25008,6 @@ zstd: *.zst, *.zstd
 		Object.defineProperty(fetcher, GUARDED, { value: true });
 		return fetcher;
 	}
-	// src/bash/GitHub.ts
 	function codeload(options) {
 		return "https://codeload.github.com/" + options.owner + "/" + options.repo + "/tar.gz/" + options.ref.split("/").map(encodeURIComponent).join("/");
 	}
@@ -23981,7 +25050,7 @@ zstd: *.zst, *.zstd
 			}
 		});
 	}
-	function base64$1(bytes) {
+	function base64(bytes) {
 		let binary = "";
 		for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
 		return btoa(binary);
@@ -24111,7 +25180,7 @@ zstd: *.zst, *.zstd
 				size: bytes.length,
 				name: file.split("/").pop(),
 				path: file,
-				content: base64$1(bytes),
+				content: base64(bytes),
 				download_url: download,
 				html_url: "https://github.com/" + repository + "/blob/" + ref + "/" + path,
 				nanocode_note: note + "raw.githubusercontent.com, so sha is not known"
@@ -24204,12 +25273,883 @@ zstd: *.zst, *.zstd
 		};
 		return guarded$1(fetcher) ? mark(layer) : layer;
 	}
+	// src/bash/internal/Inflate.ts
+	const lengthBase = [
+		3,
+		4,
+		5,
+		6,
+		7,
+		8,
+		9,
+		10,
+		11,
+		13,
+		15,
+		17,
+		19,
+		23,
+		27,
+		31,
+		35,
+		43,
+		51,
+		59,
+		67,
+		83,
+		99,
+		115,
+		131,
+		163,
+		195,
+		227,
+		258
+	];
+	const lengthExtra = [
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		1,
+		1,
+		1,
+		1,
+		2,
+		2,
+		2,
+		2,
+		3,
+		3,
+		3,
+		3,
+		4,
+		4,
+		4,
+		4,
+		5,
+		5,
+		5,
+		5,
+		0
+	];
+	const distanceBase = [
+		1,
+		2,
+		3,
+		4,
+		5,
+		7,
+		9,
+		13,
+		17,
+		25,
+		33,
+		49,
+		65,
+		97,
+		129,
+		193,
+		257,
+		385,
+		513,
+		769,
+		1025,
+		1537,
+		2049,
+		3073,
+		4097,
+		6145,
+		8193,
+		12289,
+		16385,
+		24577
+	];
+	const distanceExtra = [
+		0,
+		0,
+		0,
+		0,
+		1,
+		1,
+		2,
+		2,
+		3,
+		3,
+		4,
+		4,
+		5,
+		5,
+		6,
+		6,
+		7,
+		7,
+		8,
+		8,
+		9,
+		9,
+		10,
+		10,
+		11,
+		11,
+		12,
+		12,
+		13,
+		13
+	];
+	const order = [
+		16,
+		17,
+		18,
+		0,
+		8,
+		7,
+		9,
+		6,
+		10,
+		5,
+		11,
+		4,
+		12,
+		3,
+		13,
+		2,
+		14,
+		1,
+		15
+	];
+	const fastBits = 10;
+	const fastMask = 1023;
+	function huffman(lengths) {
+		const counts = /* @__PURE__ */ new Uint16Array(16);
+		for (let symbol = 0; symbol < lengths.length; symbol++) counts[lengths[symbol]]++;
+		counts[0] = 0;
+		const offsets = /* @__PURE__ */ new Uint16Array(16);
+		for (let length = 1; length < 15; length++) offsets[length + 1] = offsets[length] + counts[length];
+		const symbols = new Uint16Array(lengths.length);
+		for (let symbol = 0; symbol < lengths.length; symbol++) if (lengths[symbol]) symbols[offsets[lengths[symbol]]++] = symbol;
+		const fast = (/* @__PURE__ */ new Int32Array(1024)).fill(-1);
+		const next = /* @__PURE__ */ new Uint16Array(16);
+		for (let length = 1, code = 0; length < 16; length++) {
+			code = code + counts[length - 1] << 1;
+			next[length] = code;
+		}
+		for (let symbol = 0; symbol < lengths.length; symbol++) {
+			const length = lengths[symbol];
+			if (!length) continue;
+			const code = next[length]++;
+			if (length > fastBits) continue;
+			let reversed = 0;
+			for (let bit = 0; bit < length; bit++) reversed |= (code >> bit & 1) << length - 1 - bit;
+			for (let index = reversed; index < 1024; index += 1 << length) fast[index] = symbol << 4 | length;
+		}
+		return {
+			counts,
+			fast,
+			symbols
+		};
+	}
+	const fixedLiterals = huffman(Uint8Array.from({ length: 288 }, (_, symbol) => symbol < 144 ? 8 : symbol < 256 ? 9 : symbol < 280 ? 7 : 8));
+	const fixedDistances = huffman((/* @__PURE__ */ new Uint8Array(30)).fill(5));
+	var InflateError = class extends Error {
+		name = "Inflate.InflateError";
+	};
+	var TruncatedError = class extends InflateError {
+		name = "Inflate.TruncatedError";
+	};
+	function zlib(input, offset, size) {
+		if (offset + 2 > input.length) throw new TruncatedError("the zlib stream ends before its header");
+		if ((input[offset] & 15) !== 8 || (input[offset] << 8 | input[offset + 1]) % 31 !== 0) throw new InflateError("the zlib stream has an invalid header");
+		if (input[offset + 1] & 32) throw new InflateError("the zlib stream needs a preset dictionary");
+		const raw = inflate$2(input, offset + 2, size);
+		if (raw.end + 4 > input.length) throw new TruncatedError("the zlib stream ends before its checksum");
+		return {
+			data: raw.data,
+			end: raw.end + 4
+		};
+	}
+	function inflate$2(input, offset, size) {
+		const out = new Uint8Array(size);
+		const end = input.length;
+		let written = 0;
+		let position = offset;
+		let buffer = 0;
+		let held = 0;
+		const short = () => new TruncatedError("the deflate stream ends early");
+		const long = () => new InflateError("the deflate stream is longer than " + size + " bytes");
+		const slow = (table) => {
+			let code = 0;
+			let first = 0;
+			let index = 0;
+			for (let length = 1; length < 16; length++) {
+				if (!held) {
+					if (position >= end) throw short();
+					buffer = input[position++];
+					held = 8;
+				}
+				code |= buffer & 1;
+				buffer >>>= 1;
+				held--;
+				const count = table.counts[length];
+				if (code - count < first) return table.symbols[index + (code - first)];
+				index += count;
+				first = first + count << 1;
+				code <<= 1;
+			}
+			throw new InflateError("the deflate stream holds an invalid code");
+		};
+		for (let last = 0; !last;) {
+			while (held < 3) {
+				if (position >= end) throw short();
+				buffer |= input[position++] << held;
+				held += 8;
+			}
+			last = buffer & 1;
+			const type = buffer >>> 1 & 3;
+			buffer >>>= 3;
+			held -= 3;
+			if (type === 0) {
+				position -= held >> 3;
+				buffer = 0;
+				held = 0;
+				if (position + 4 > end) throw short();
+				const length = input[position] | input[position + 1] << 8;
+				const inverse = input[position + 2] | input[position + 3] << 8;
+				position += 4;
+				if ((length ^ 65535) !== inverse) throw new InflateError("a stored deflate block has a bad length");
+				if (position + length > end) throw short();
+				if (written + length > size) throw long();
+				out.set(input.subarray(position, position + length), written);
+				written += length;
+				position += length;
+				continue;
+			}
+			if (type === 3) throw new InflateError("the deflate stream holds a reserved block type");
+			const bits = (count) => {
+				while (held < count) {
+					if (position >= end) throw short();
+					buffer |= input[position++] << held;
+					held += 8;
+				}
+				const value = buffer & (1 << count) - 1;
+				buffer >>>= count;
+				held -= count;
+				return value;
+			};
+			let literals = fixedLiterals;
+			let distances = fixedDistances;
+			if (type === 2) {
+				const literalCount = bits(5) + 257;
+				const distanceCount = bits(5) + 1;
+				const codeCount = bits(4) + 4;
+				const codeLengths = /* @__PURE__ */ new Uint8Array(19);
+				for (let index = 0; index < codeCount; index++) codeLengths[order[index]] = bits(3);
+				const codes = huffman(codeLengths);
+				const lengths = new Uint8Array(literalCount + distanceCount);
+				for (let index = 0; index < lengths.length;) {
+					while (held < fastBits && position < end) {
+						buffer |= input[position++] << held;
+						held += 8;
+					}
+					const entry = codes.fast[buffer & fastMask];
+					let symbol;
+					if (entry >= 0 && (entry & 15) <= held) {
+						buffer >>>= entry & 15;
+						held -= entry & 15;
+						symbol = entry >> 4;
+					} else symbol = slow(codes);
+					if (symbol < 16) {
+						lengths[index++] = symbol;
+						continue;
+					}
+					let repeat;
+					let value = 0;
+					if (symbol === 16) {
+						if (!index) throw new InflateError("a deflate length repeats nothing");
+						repeat = 3 + bits(2);
+						value = lengths[index - 1];
+					} else if (symbol === 17) repeat = 3 + bits(3);
+					else repeat = 11 + bits(7);
+					if (index + repeat > lengths.length) throw new InflateError("deflate code lengths overflow");
+					lengths.fill(value, index, index + repeat);
+					index += repeat;
+				}
+				literals = huffman(lengths.subarray(0, literalCount));
+				distances = huffman(lengths.subarray(literalCount));
+			}
+			const literalFast = literals.fast;
+			const distanceFast = distances.fast;
+			for (;;) {
+				if (held <= 16 && position + 1 < end) {
+					buffer |= input[position] << held | input[position + 1] << held + 8;
+					position += 2;
+					held += 16;
+				}
+				while (held < fastBits && position < end) {
+					buffer |= input[position++] << held;
+					held += 8;
+				}
+				let entry = literalFast[buffer & fastMask];
+				let symbol;
+				if (entry >= 0 && (entry & 15) <= held) {
+					buffer >>>= entry & 15;
+					held -= entry & 15;
+					symbol = entry >> 4;
+				} else symbol = slow(literals);
+				if (symbol < 256) {
+					if (written >= size) throw long();
+					out[written++] = symbol;
+					continue;
+				}
+				if (symbol === 256) break;
+				const slot = symbol - 257;
+				if (slot >= 29) throw new InflateError("the deflate stream holds an invalid length");
+				const lengthBits = lengthExtra[slot];
+				const length = lengthBase[slot] + (lengthBits ? bits(lengthBits) : 0);
+				while (held < fastBits && position < end) {
+					buffer |= input[position++] << held;
+					held += 8;
+				}
+				entry = distanceFast[buffer & fastMask];
+				let code;
+				if (entry >= 0 && (entry & 15) <= held) {
+					buffer >>>= entry & 15;
+					held -= entry & 15;
+					code = entry >> 4;
+				} else code = slow(distances);
+				if (code >= 30) throw new InflateError("the deflate stream holds an invalid distance");
+				const distanceBits = distanceExtra[code];
+				const distance = distanceBase[code] + (distanceBits ? bits(distanceBits) : 0);
+				if (distance > written) throw new InflateError("a deflate distance reaches before the output");
+				if (written + length > size) throw long();
+				if (distance >= length) {
+					out.copyWithin(written, written - distance, written - distance + length);
+					written += length;
+				} else for (let index = 0; index < length; index++, written++) out[written] = out[written - distance];
+			}
+		}
+		if (written !== size) throw new InflateError("the deflate stream holds " + written + " bytes, not " + size);
+		return {
+			data: out,
+			end: position - (held >> 3)
+		};
+	}
+	// src/bash/internal/GitPack.ts
+	const encoder = new TextEncoder();
+	const decoder = new TextDecoder();
+	const types = [
+		"",
+		"commit",
+		"tree",
+		"blob",
+		"tag"
+	];
+	var GitError = class extends Error {
+		name = "GitPack.GitError";
+		status;
+		constructor(message, status) {
+			super(message);
+			this.status = status;
+		}
+	};
+	function line(text) {
+		const bytes = encoder.encode(text);
+		return encoder.encode((bytes.length + 4).toString(16).padStart(4, "0") + text);
+	}
+	function request(command, args) {
+		const parts = [
+			line("command=" + command + "\n"),
+			line("agent=nanocode-ts\n"),
+			encoder.encode("0001"),
+			...args.map((arg) => line(arg + "\n")),
+			encoder.encode("0000")
+		];
+		const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	}
+	async function post(fetcher, options) {
+		const { body, repository, signal } = options;
+		const response = await fetcher(options.url ?? "https://github.com/" + repository + ".git/git-upload-pack", {
+			body,
+			headers: {
+				accept: "application/x-git-upload-pack-result",
+				"content-type": "application/x-git-upload-pack-request",
+				"git-protocol": "version=2",
+				"user-agent": "git/2.47.0 nanocode-ts"
+			},
+			method: "POST",
+			...signal ? { signal } : {}
+		});
+		if (!response.ok || !response.body) {
+			await response.body?.cancel().catch(() => {});
+			throw new GitError("github.com answered HTTP " + response.status + " for " + repository, response.status);
+		}
+		return response;
+	}
+	async function* packets(body) {
+		const reader = body.getReader();
+		let buffer = /* @__PURE__ */ new Uint8Array(0);
+		let start = 0;
+		try {
+			for (;;) {
+				while (buffer.length - start >= 4) {
+					const length = parseInt(decoder.decode(buffer.subarray(start, start + 4)), 16);
+					if (Number.isNaN(length)) throw new GitError("github.com sent an invalid pkt-line");
+					if (length < 4) {
+						start += 4;
+						yield length === 0 ? "flush" : length === 1 ? "delim" : "end";
+						continue;
+					}
+					if (buffer.length - start < length) break;
+					yield buffer.subarray(start + 4, start + length);
+					start += length;
+				}
+				const next = await reader.read();
+				if (next.done) break;
+				const rest = buffer.subarray(start);
+				const merged = new Uint8Array(rest.length + next.value.length);
+				merged.set(rest);
+				merged.set(next.value, rest.length);
+				buffer = merged;
+				start = 0;
+			}
+		} finally {
+			reader.releaseLock();
+		}
+		if (buffer.length - start) throw new GitError("github.com ended the response inside a pkt-line");
+	}
+	async function refs(fetcher, options) {
+		const { ref, repository } = options;
+		const prefixes = ref === "HEAD" ? ["HEAD"] : ["refs/heads/" + ref, "refs/tags/" + ref];
+		const response = await post(fetcher, {
+			body: request("ls-refs", [
+				"symrefs",
+				"peel",
+				...prefixes.map((prefix) => "ref-prefix " + prefix)
+			]),
+			repository,
+			signal: options.signal,
+			url: options.url
+		});
+		const found = /* @__PURE__ */ new Map();
+		for await (const packet of packets(response.body)) {
+			if (typeof packet === "string") continue;
+			const [sha, name, ...attributes] = decoder.decode(packet).trim().split(" ");
+			if (!sha || !name) continue;
+			const target = attributes.find((attribute) => attribute.startsWith("symref-target:"))?.slice(14);
+			const peeled = attributes.find((attribute) => attribute.startsWith("peeled:"))?.slice(7);
+			found.set(name, {
+				sha,
+				...target ? { target } : {},
+				...peeled ? { peeled } : {}
+			});
+		}
+		for (const prefix of prefixes) {
+			const entry = found.get(prefix);
+			if (!entry) continue;
+			return {
+				branch: prefix === "HEAD" ? entry.target?.replace(/^refs\/heads\//, "") ?? null : prefix.startsWith("refs/heads/") ? ref : null,
+				commit: entry.peeled ?? entry.sha
+			};
+		}
+	}
+	async function fetchPack(fetcher, options) {
+		const response = await post(fetcher, {
+			body: request("fetch", [
+				"no-progress",
+				"ofs-delta",
+				"deepen 1",
+				...options.filterBytes === void 0 ? [] : ["filter blob:limit=" + options.filterBytes],
+				"want " + options.commit,
+				"done"
+			]),
+			repository: options.repository,
+			signal: options.signal,
+			url: options.url
+		});
+		const segment = options.segmentBytes;
+		const parts = [];
+		const starts = [];
+		let current = new Uint8Array(segment);
+		let filled = 0;
+		let total = 0;
+		let section = "";
+		const close = () => {
+			if (!filled) return;
+			starts.push(total - filled);
+			parts.push(filled === current.length ? current : current.slice(0, filled));
+			current = new Uint8Array(segment);
+			filled = 0;
+		};
+		for await (const packet of packets(response.body)) {
+			if (typeof packet === "string") {
+				if (packet === "flush" && section === "packfile") break;
+				continue;
+			}
+			if (section !== "packfile") {
+				section = decoder.decode(packet).trim();
+				if (section.startsWith("ERR ")) throw new GitError("github.com refused the fetch: " + section.slice(4));
+				continue;
+			}
+			const band = packet[0];
+			if (band === 1) {
+				for (let at = 1; at < packet.length;) {
+					const take = Math.min(packet.length - at, current.length - filled);
+					current.set(packet.subarray(at, at + take), filled);
+					filled += take;
+					total += take;
+					at += take;
+					if (filled === current.length) close();
+				}
+				if (options.maxBytes !== void 0 && total > options.maxBytes) throw new GitError("the pack of " + options.repository + " is larger than " + options.maxBytes + " bytes");
+			} else if (band === 3) throw new GitError("github.com failed the fetch: " + decoder.decode(packet.subarray(1)).trim());
+		}
+		close();
+		return {
+			parts,
+			size: total,
+			starts
+		};
+	}
+	function hex$1(bytes) {
+		let out = "";
+		for (const value of bytes) out += value.toString(16).padStart(2, "0");
+		return out;
+	}
+	async function sha(kind, data) {
+		const header = encoder.encode(kind + " " + data.length + "\0");
+		const all = new Uint8Array(header.length + data.length);
+		all.set(header);
+		all.set(data, header.length);
+		return hex$1(new Uint8Array(await crypto.subtle.digest("SHA-1", all)));
+	}
+	function apply$1(base, delta) {
+		let position = 0;
+		const varint = () => {
+			let value = 0;
+			let shift = 0;
+			for (;;) {
+				const byte = delta[position++];
+				value += (byte & 127) * 2 ** shift;
+				shift += 7;
+				if (!(byte & 128)) return value;
+			}
+		};
+		if (varint() !== base.length) throw new GitError("a delta in the pack names another base size");
+		const out = new Uint8Array(varint());
+		let written = 0;
+		while (position < delta.length) {
+			const op = delta[position++];
+			if (op & 128) {
+				let offset = 0;
+				let size = 0;
+				for (let bit = 0; bit < 4; bit++) if (op & 1 << bit) offset |= delta[position++] << 8 * bit;
+				for (let bit = 0; bit < 3; bit++) if (op & 16 << bit) size |= delta[position++] << 8 * bit;
+				offset >>>= 0;
+				if (!size) size = 65536;
+				if (offset + size > base.length || written + size > out.length) throw new GitError("a delta in the pack copies past its base");
+				out.set(base.subarray(offset, offset + size), written);
+				written += size;
+			} else if (op) {
+				if (written + op > out.length || position + op > delta.length) throw new GitError("a delta in the pack inserts past its end");
+				out.set(delta.subarray(position, position + op), written);
+				written += op;
+				position += op;
+			} else throw new GitError("a delta in the pack holds a reserved instruction");
+		}
+		if (written !== out.length) throw new GitError("a delta in the pack ends short of its size");
+		return out;
+	}
+	function locate$1(pack, offset) {
+		let low = 0;
+		let high = pack.starts.length - 1;
+		while (low < high) {
+			const middle = low + high + 1 >> 1;
+			if (pack.starts[middle] <= offset) low = middle;
+			else high = middle - 1;
+		}
+		return low;
+	}
+	function byte(pack, offset) {
+		if (offset >= pack.size) throw new GitError("the pack ends inside an object header");
+		const at = locate$1(pack, offset);
+		return pack.parts[at][offset - pack.starts[at]];
+	}
+	function inflate$1(pack, start, size) {
+		let at = locate$1(pack, start);
+		let input = pack.parts[at];
+		let base = pack.starts[at];
+		for (;;) try {
+			const raw = zlib(input, start - base, size);
+			return {
+				data: raw.data,
+				end: base + raw.end
+			};
+		} catch (error) {
+			if (!(error instanceof TruncatedError) || at + 1 >= pack.parts.length) throw error;
+			const rest = input.subarray(start - base);
+			const next = pack.parts[++at];
+			const joined = new Uint8Array(rest.length + next.length);
+			joined.set(rest);
+			joined.set(next, rest.length);
+			input = joined;
+			base = start;
+		}
+	}
+	function objects(pack, options = {}) {
+		const limit = options.cacheBytes ?? 0;
+		const entries = /* @__PURE__ */ new Map();
+		const bySha = /* @__PURE__ */ new Map();
+		const cache = /* @__PURE__ */ new Map();
+		let cached = 0;
+		const keep = (offset, value) => {
+			if (value.data.length > limit) return;
+			cache.set(offset, value);
+			cached += value.data.length;
+			for (const [key, old] of cache) {
+				if (cached <= limit) break;
+				cache.delete(key);
+				cached -= old.data.length;
+			}
+		};
+		const resolve = (entry, raw) => {
+			const hit = cache.get(entry.offset);
+			if (hit) return hit;
+			const data = raw ?? inflate$1(pack, entry.start, entry.size).data;
+			if (entry.kind !== "ofs-delta" && entry.kind !== "ref-delta") return {
+				kind: entry.kind,
+				data
+			};
+			const at = typeof entry.base === "number" ? entry.base : bySha.get(String(entry.base));
+			const base = at === void 0 ? void 0 : entries.get(at);
+			if (!base) throw new GitError("a delta in the pack names a base the pack does not hold");
+			const resolved = resolve(base);
+			return {
+				kind: resolved.kind,
+				data: apply$1(resolved.data, data)
+			};
+		};
+		const window = options.windowBytes ?? 0;
+		let pending = [];
+		let held = 0;
+		const settle = async () => {
+			const ids = await Promise.all(pending.map((item) => item.id));
+			const done = pending.map((item, index) => {
+				bySha.set(ids[index], item.start);
+				return {
+					data: item.data,
+					kind: item.kind,
+					sha: ids[index]
+				};
+			});
+			pending = [];
+			held = 0;
+			return done;
+		};
+		const read = (sha) => {
+			const at = bySha.get(sha);
+			const entry = at === void 0 ? void 0 : entries.get(at);
+			if (!entry) throw new GitError("the pack does not hold object " + sha);
+			return resolve(entry).data;
+		};
+		const items = async function* () {
+			const head = (/* @__PURE__ */ new Uint8Array(12)).map((_, index) => byte(pack, index));
+			if (decoder.decode(head.subarray(0, 4)) !== "PACK") throw new GitError("github.com sent no pack");
+			const view = new DataView(head.buffer);
+			const version = view.getUint32(4);
+			if (version !== 2 && version !== 3) throw new GitError("the pack has version " + version);
+			const count = view.getUint32(8);
+			let offset = 12;
+			for (let n = 0; n < count; n++) {
+				const start = offset;
+				let next = byte(pack, offset++);
+				const code = next >> 4 & 7;
+				let size = next & 15;
+				let shift = 4;
+				while (next & 128) {
+					next = byte(pack, offset++);
+					size += (next & 127) * 2 ** shift;
+					shift += 7;
+				}
+				const entry = (() => {
+					if (code === 6) {
+						next = byte(pack, offset++);
+						let back = next & 127;
+						while (next & 128) {
+							next = byte(pack, offset++);
+							back = (back + 1) * 128 + (next & 127);
+						}
+						return {
+							kind: "ofs-delta",
+							offset: start,
+							size,
+							start: offset,
+							base: start - back
+						};
+					}
+					if (code === 7) {
+						const base = hex$1((/* @__PURE__ */ new Uint8Array(20)).map((_, index) => byte(pack, offset + index)));
+						offset += 20;
+						return {
+							kind: "ref-delta",
+							offset: start,
+							size,
+							start: offset,
+							base
+						};
+					}
+					const kind = types[code];
+					if (!kind) throw new GitError("the pack holds an object of type " + code);
+					return {
+						kind,
+						offset: start,
+						size,
+						start: offset
+					};
+				})();
+				entry.start = offset;
+				const raw = inflate$1(pack, offset, size);
+				offset = raw.end;
+				entries.set(start, entry);
+				if (entry.kind === "ref-delta" && !bySha.has(String(entry.base))) yield* await settle();
+				const value = resolve(entry, raw.data);
+				keep(start, value);
+				pending.push({
+					data: value.data,
+					id: sha(value.kind, value.data),
+					kind: value.kind,
+					start
+				});
+				held += value.data.length;
+				if (held >= window) yield* await settle();
+			}
+			yield* await settle();
+		};
+		return {
+			items: items(),
+			read
+		};
+	}
+	function tree(data) {
+		const out = [];
+		let offset = 0;
+		while (offset < data.length) {
+			const space = data.indexOf(32, offset);
+			const nul = data.indexOf(0, space);
+			if (space < 0 || nul < 0 || nul + 21 > data.length) throw new GitError("the pack holds a malformed tree");
+			out.push({
+				mode: decoder.decode(data.subarray(offset, space)),
+				name: decoder.decode(data.subarray(space + 1, nul)),
+				sha: hex$1(data.subarray(nul + 1, nul + 21))
+			});
+			offset = nul + 21;
+		}
+		return out;
+	}
+	function commit(data) {
+		const text = decoder.decode(data);
+		const split = text.indexOf("\n\n");
+		const headers = (split < 0 ? text : text.slice(0, split)).split("\n");
+		const tree = headers.find((header) => header.startsWith("tree "))?.slice(5);
+		if (!tree) throw new GitError("the pack holds a commit without a tree");
+		const author = /^author (.*) (\d+) ([+-]\d{4})$/.exec(headers.find((header) => header.startsWith("author ")) ?? "");
+		return {
+			author: author ? author[1] : null,
+			date: author ? (/* @__PURE__ */ new Date(Number(author[2]) * 1e3)).toISOString().replace(".000Z", "Z") : null,
+			message: split < 0 ? "" : text.slice(split + 2),
+			tree
+		};
+	}
+	async function* checkout(pack, options) {
+		const unpacked = objects(pack, options);
+		const trees = /* @__PURE__ */ new Map();
+		const arrived = /* @__PURE__ */ new Set();
+		const prefixes = /* @__PURE__ */ new Map();
+		const wanted = /* @__PURE__ */ new Map();
+		let found = false;
+		const expand = function* (sha, list) {
+			for (const item of tree(trees.get(sha))) for (const prefix of list) {
+				const path = prefix + item.name;
+				if (item.mode === "40000") yield* place(item.sha, [path + "/"]);
+				else if (!item.mode.startsWith("100")) yield {
+					kind: "skipped",
+					mode: item.mode,
+					path
+				};
+				else if (arrived.has(item.sha)) yield {
+					data: unpacked.read(item.sha),
+					kind: "file",
+					mode: item.mode,
+					path,
+					sha: item.sha
+				};
+				else wanted.set(item.sha, [...wanted.get(item.sha) ?? [], {
+					mode: item.mode,
+					path
+				}]);
+			}
+		};
+		const place = function* (sha, list) {
+			if (!trees.has(sha)) {
+				prefixes.set(sha, [...prefixes.get(sha) ?? [], ...list]);
+				return;
+			}
+			yield* expand(sha, list);
+		};
+		for await (const item of unpacked.items) {
+			if (item.kind === "blob") {
+				arrived.add(item.sha);
+				const list = wanted.get(item.sha);
+				wanted.delete(item.sha);
+				for (const entry of list ?? []) yield {
+					data: item.data,
+					kind: "file",
+					mode: entry.mode,
+					path: entry.path,
+					sha: item.sha
+				};
+				continue;
+			}
+			if (item.kind === "tree") {
+				trees.set(item.sha, item.data);
+				const list = prefixes.get(item.sha);
+				prefixes.delete(item.sha);
+				if (list) yield* expand(item.sha, list);
+				continue;
+			}
+			if (item.sha !== options.commit) continue;
+			const info = commit(item.data);
+			found = true;
+			yield {
+				info,
+				kind: "commit"
+			};
+			yield* place(info.tree, [""]);
+		}
+		if (!found || prefixes.size) throw new GitError("the pack lacks a tree of commit " + options.commit);
+		for (const [sha, list] of wanted) for (const entry of list) yield {
+			kind: "filtered",
+			mode: entry.mode,
+			path: entry.path,
+			sha
+		};
+	}
+	// src/bash/Sources.ts
+	function github(owner, repo, commit, path) {
+		return "github:" + owner + "/" + repo + "@" + commit + "/" + path;
+	}
 	// src/bash/internal/commands/git.ts
 	init_Shell();
 	init_FileSystem();
 	init_Fs();
-	const MAX_BYTES = 209715200;
-	const MAX_FILE_BYTES = 8388608;
 	const MAX_DOWNLOAD_BYTES = 2147483648;
 	const MAX_FILES = 5e4;
 	const STALL_MS = 3e4;
@@ -24308,6 +26248,17 @@ zstd: *.zst, *.zstd
 	function lost(error) {
 		return error instanceof Stalled || error instanceof Error && !(error instanceof CommandError) && /network connection lost|connection (?:was )?(?:reset|closed|lost)|terminated|socket hang up|ECONNRESET|other side closed/i.test(error.message);
 	}
+	function notFound$1(repository, ref) {
+		return "fatal: repository 'https://github.com/" + repository + ".git/' or ref '" + ref + "' not found (private repositories cannot be cloned here)";
+	}
+	function missing(error) {
+		if (error instanceof GitError && [
+			401,
+			403,
+			404
+		].includes(error.status ?? 0)) return void 0;
+		throw error;
+	}
 	async function fetchArchive(ctx, github, repository, ref) {
 		if (!ctx.fetch) throw new CommandError("fatal: network access is not available in this shell", 128);
 		const fetcher = wrap(ctx.fetch, { token: github.token });
@@ -24343,7 +26294,7 @@ zstd: *.zst, *.zstd
 			last = response.status;
 			await response.body?.cancel().catch(() => {});
 		}
-		if (last === 404) throw new CommandError("fatal: repository 'https://github.com/" + repository + ".git/' or ref '" + ref + "' not found (private repositories cannot be cloned here)", 128);
+		if (last === 404) throw new CommandError(notFound$1(repository, ref), 128);
 		if (last === -2) throw new Stalled("GitHub did not start sending the archive within " + Math.round(stallMs / 1e3) + " s");
 		throw new CommandError("fatal: unable to download https://github.com/" + repository + " at " + ref + (last > 0 ? " (HTTP " + last + ")" : ""), 128);
 	}
@@ -24387,9 +26338,9 @@ zstd: *.zst, *.zstd
 		if (stat?.kind === "directory") for (const name of await fs.list(path)) await removeTree$1(fs, (path === "/" ? "" : path) + "/" + name);
 		if (stat) await fs.remove(path);
 	}
-	async function clone(ctx, github, args) {
+	async function clone(ctx, github$1, args) {
 		const options = parseClone(args);
-		const name = options.repository.split("/")[1];
+		const [owner, name] = options.repository.split("/");
 		const directory = options.directory ?? name;
 		const target = ctx.resolve(directory);
 		const existing = await ctx.fs.stat(target);
@@ -24407,17 +26358,19 @@ zstd: *.zst, *.zstd
 			else if (stat.kind !== "directory") throw new FsError("ENOTDIR", path);
 			known.add(path);
 		};
-		const maxBytes = github.maxBytes ?? MAX_BYTES;
-		const maxFiles = github.maxFiles ?? MAX_FILES;
-		const maxFileBytes = github.maxFileBytes ?? MAX_FILE_BYTES;
-		const maxDownload = github.maxDownloadBytes ?? MAX_DOWNLOAD_BYTES;
+		const maxBytes$1 = github$1.maxBytes ?? 209715200;
+		const maxFiles = github$1.maxFiles ?? MAX_FILES;
+		const maxFileBytes$1 = github$1.maxFileBytes ?? 8388608;
+		const maxDownload = github$1.maxDownloadBytes ?? MAX_DOWNLOAD_BYTES;
 		const created = !existing;
 		let files = {};
-		let reader = new TarReader(maxFileBytes);
+		let reader = new TarReader(maxFileBytes$1);
 		let omitted = [];
+		let pinned;
 		let written = 0;
 		let count = 0;
 		let skipped = 0;
+		let submodules = 0;
 		let queued = [];
 		let dirs = [];
 		let queuedBytes = 0;
@@ -24434,7 +26387,7 @@ zstd: *.zst, *.zstd
 			dirs = [];
 			queuedBytes = 0;
 			if (!batch.length && !made.length) return;
-			const [refused, ids] = await Promise.all([writeMany(ctx.fs, made, batch.map((entry) => entry.file)), Promise.all(batch.map((entry) => blobId(entry.file.data)))]);
+			const [refused, ids] = await Promise.all([writeMany(ctx.fs, made, batch.map((entry) => entry.file)), Promise.all(batch.map((entry) => entry.id ?? blobId(entry.file.data)))]);
 			const failed = new Set(refused);
 			batch.forEach((entry, index) => {
 				if (!failed.has(entry.file.path)) {
@@ -24454,86 +26407,216 @@ zstd: *.zst, *.zstd
 				written -= entry.file.data.length;
 			});
 		};
-		for (let attempt = 1;; attempt++) {
+		const reset = () => {
 			files = {};
-			reader = new TarReader(maxFileBytes);
+			reader = new TarReader(maxFileBytes$1);
 			omitted = [];
 			written = 0;
 			count = 0;
 			skipped = 0;
+			submodules = 0;
 			queued = [];
 			dirs = [];
 			queuedBytes = 0;
 			known.clear();
+			pinned = void 0;
+		};
+		const clear = async () => {
+			if (created) await removeTree$1(ctx.fs, target).catch(() => {});
+			else for (const name of await ctx.fs.list(target).catch(() => [])) await removeTree$1(ctx.fs, target + "/" + name).catch(() => {});
+		};
+		const fetcher = wrap(ctx.fetch, { token: github$1.token });
+		const url = github$1.pack?.(owner, name);
+		const race = () => {
+			const controller = new AbortController();
+			const signal = AbortSignal.any([ctx.signal, controller.signal]);
+			const result = (async () => {
+				const found = /^[0-9a-f]{40}$/.test(ref) ? {
+					branch: null,
+					commit: ref
+				} : await refs(fetcher, {
+					ref,
+					repository: options.repository,
+					signal,
+					url
+				}).catch(missing);
+				if (!found) return void 0;
+				const pack = await fetchPack(fetcher, {
+					commit: found.commit,
+					filterBytes: maxFileBytes$1,
+					maxBytes: maxDownload,
+					repository: options.repository,
+					segmentBytes: maxFileBytes$1,
+					signal,
+					url
+				}).catch(missing);
+				return pack && {
+					found,
+					pack
+				};
+			})();
+			result.catch(() => {});
+			return {
+				abort: () => controller.abort(),
+				result
+			};
+		};
+		for (let attempt = 1;; attempt++) {
+			reset();
+			const racing = github$1.archive && !github$1.pack ? void 0 : race();
 			let watch;
 			let stream;
 			let root;
 			let bytes = 0;
 			try {
-				const download = await fetchArchive(ctx, github, options.repository, ref);
-				watch = download.watch;
-				stream = download.response.body.pipeThrough(new DecompressionStream("gzip")).getReader();
-				await ensure(target);
-				for (;;) {
-					if (ctx.signal.aborted) throw new CommandError("fatal: clone aborted", 130);
-					watch.arm();
-					const next = await watch.race(stream.read());
-					if (next.done) break;
-					bytes += next.value.length;
-					if (bytes > maxDownload) throw new CommandError("fatal: repository archive is larger than " + Math.round(maxDownload / 1024 / 1024) + " MiB uncompressed; clone a smaller repository or fetch single files with curl", 128);
-					watch.stop();
-					for (const entry of reader.push(next.value)) {
-						const parts = entry.name.split("/");
-						if (entry.name.startsWith("/") || entry.name.includes("\\") || entry.name.includes("\0") || parts.some((part) => part === ".." || part === "." || part === "" || part === ".git")) throw new CommandError("fatal: repository archive contains an unsafe path: " + entry.name, 128);
-						root ??= parts[0];
-						if (parts[0] !== root) throw new CommandError("fatal: repository archive must contain one root directory", 128);
-						if (parts.length === 1) continue;
-						const relative = parts.slice(1).join("/");
-						const path = target + "/" + relative;
-						if (entry.type === "directory") {
-							folder(path);
+				const viaPack = async (found, pack) => {
+					await ensure(target);
+					root = name;
+					for await (const item of checkout(pack, {
+						cacheBytes: maxFileBytes$1,
+						commit: found.commit,
+						windowBytes: BATCH_BYTES
+					})) {
+						if (ctx.signal.aborted) throw new CommandError("fatal: clone aborted", 130);
+						if (item.kind === "commit") {
+							pinned = {
+								...found,
+								info: item.info
+							};
 							continue;
 						}
-						if (entry.type !== "file") {
-							skipped++;
+						if (item.kind === "skipped") {
+							if (item.mode === "160000") submodules++;
+							else skipped++;
 							continue;
 						}
-						const reason = entry.omitted !== void 0 ? "larger than " + size$1(maxFileBytes) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + entry.data.length > maxBytes ? "past the " + size$1(maxBytes) + " limit" : void 0;
+						if (item.path.split("/").some((part) => part === ".." || part === "." || part === "" || part === ".git")) throw new CommandError("fatal: repository tree contains an unsafe path: " + item.path, 128);
+						const reason = item.kind === "filtered" ? "larger than " + size$1(maxFileBytes$1) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + item.data.length > maxBytes$1 ? "past the " + size$1(maxBytes$1) + " limit" : void 0;
 						if (reason) {
 							omitted.push({
-								path: relative,
-								bytes: entry.omitted ?? entry.data.length,
+								path: item.path,
+								bytes: item.kind === "file" ? item.data.length : void 0,
 								reason
 							});
 							continue;
 						}
+						if (item.kind !== "file") continue;
 						count++;
-						written += entry.data.length;
+						written += item.data.length;
+						const path = target + "/" + item.path;
 						folder(parentOf(path));
 						queued.push({
-							relative,
+							id: item.sha,
+							relative: item.path,
 							file: {
 								path,
-								data: entry.data,
-								mtime: Date.now()
+								data: item.data,
+								mtime: Date.now(),
+								source: github(owner, name, found.commit, item.path)
 							}
 						});
-						queuedBytes += entry.data.length + 512;
+						queuedBytes += item.data.length + 512;
 						if (queuedBytes >= BATCH_BYTES) await flush();
+						await breathe();
 					}
-					await breathe();
-					if (reader.done) break;
+					await flush();
+				};
+				const viaArchive = async (signal) => {
+					const download = await fetchArchive({
+						...ctx,
+						signal
+					}, github$1, options.repository, ref);
+					watch = download.watch;
+					stream = download.response.body.pipeThrough(new DecompressionStream("gzip")).getReader();
+					await ensure(target);
+					for (;;) {
+						if (signal.aborted) throw new CommandError("fatal: clone aborted", 130);
+						watch.arm();
+						const next = await watch.race(stream.read());
+						if (next.done) break;
+						bytes += next.value.length;
+						if (bytes > maxDownload) throw new CommandError("fatal: repository archive is larger than " + Math.round(maxDownload / 1024 / 1024) + " MiB uncompressed; clone a smaller repository or fetch single files with curl", 128);
+						watch.stop();
+						for (const entry of reader.push(next.value)) {
+							const parts = entry.name.split("/");
+							if (entry.name.startsWith("/") || entry.name.includes("\\") || entry.name.includes("\0") || parts.some((part) => part === ".." || part === "." || part === "" || part === ".git")) throw new CommandError("fatal: repository archive contains an unsafe path: " + entry.name, 128);
+							root ??= parts[0];
+							if (parts[0] !== root) throw new CommandError("fatal: repository archive must contain one root directory", 128);
+							if (parts.length === 1) continue;
+							const relative = parts.slice(1).join("/");
+							const path = target + "/" + relative;
+							if (entry.type === "directory") {
+								folder(path);
+								continue;
+							}
+							if (entry.type !== "file") {
+								skipped++;
+								continue;
+							}
+							const reason = entry.omitted !== void 0 ? "larger than " + size$1(maxFileBytes$1) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + entry.data.length > maxBytes$1 ? "past the " + size$1(maxBytes$1) + " limit" : void 0;
+							if (reason) {
+								omitted.push({
+									path: relative,
+									bytes: entry.omitted ?? entry.data.length,
+									reason
+								});
+								continue;
+							}
+							count++;
+							written += entry.data.length;
+							folder(parentOf(path));
+							const pinned = reader.global["comment"];
+							queued.push({
+								relative,
+								file: {
+									path,
+									data: entry.data,
+									mtime: Date.now(),
+									...pinned && /^[0-9a-f]{40}$/.test(pinned) ? { source: github(owner, name, pinned, relative) } : {}
+								}
+							});
+							queuedBytes += entry.data.length + 512;
+							if (queuedBytes >= BATCH_BYTES) await flush();
+						}
+						await breathe();
+						if (reader.done) break;
+					}
+					await flush();
+					if (!root) throw new CommandError("fatal: repository archive is empty", 128);
+					watch.stop();
+					await stream.cancel().catch(() => {});
+				};
+				if (!racing) {
+					await viaArchive(ctx.signal);
+					break;
 				}
-				await flush();
-				if (!root) throw new CommandError("fatal: repository archive is empty", 128);
-				watch.stop();
-				await stream.cancel().catch(() => {});
+				if (github$1.archive === false) {
+					const raced = await racing.result;
+					if (!raced) throw new CommandError(notFound$1(options.repository, ref), 128);
+					await viaPack(raced.found, raced.pack);
+					break;
+				}
+				const archiving = new AbortController();
+				racing.result.then((raced) => raced && archiving.abort(), () => {});
+				const failure = await viaArchive(AbortSignal.any([ctx.signal, archiving.signal])).then(() => void 0, (error) => ({ error }));
+				if (!failure) {
+					racing.abort();
+					break;
+				}
+				if (ctx.signal.aborted) throw failure.error;
+				const raced = await racing.result.catch(() => void 0);
+				if (!raced) throw failure.error;
+				watch?.stop();
+				await stream?.cancel().catch(() => {});
+				await clear();
+				reset();
+				await viaPack(raced.found, raced.pack);
 				break;
 			} catch (error) {
 				watch?.stop();
 				await stream?.cancel().catch(() => {});
-				if (created) await removeTree$1(ctx.fs, target).catch(() => {});
-				else for (const name of await ctx.fs.list(target).catch(() => [])) await removeTree$1(ctx.fs, target + "/" + name).catch(() => {});
+				racing?.abort();
+				await clear();
 				if (!ctx.signal.aborted && lost(error)) {
 					const reason = error instanceof Error ? error.message.replace(/\.$/, "") : String(error);
 					if (attempt < ATTEMPTS) {
@@ -24548,13 +26631,19 @@ zstd: *.zst, *.zstd
 		}
 		const pax = reader.global["comment"];
 		const commit = pax && /^[0-9a-f]{40}$/.test(pax) ? pax : null;
-		const info = github.details === false ? {
+		const info = pinned ? {
+			branch: pinned.branch,
+			author: pinned.info.author,
+			date: pinned.info.date,
+			message: pinned.info.message,
+			commit: pinned.commit
+		} : github$1.details === false ? {
 			branch: ref === "HEAD" ? null : ref,
 			author: null,
 			date: null,
 			message: null,
 			commit
-		} : await details(ctx, github, options.repository, ref, commit);
+		} : await details(ctx, github$1, options.repository, ref, commit);
 		const snapshot = {
 			repository: options.repository,
 			url: "https://github.com/" + options.repository + ".git",
@@ -24574,11 +26663,12 @@ zstd: *.zst, *.zstd
 		await ctx.fs.write(target + "/.git/nanocode.json", encode(JSON.stringify(snapshot)));
 		if (omitted.length) {
 			const raw = "https://raw.githubusercontent.com/" + options.repository + "/" + (snapshot.commit ?? ref) + "/";
-			ctx.stderr.write("warning: left out " + omitted.length + " file" + (omitted.length === 1 ? "" : "s") + " (" + size$1(omitted.reduce((total, item) => total + item.bytes, 0)) + "); fetch one with curl -sLO " + raw + "PATH\n");
-			for (const item of omitted.slice(0, 10)) ctx.stderr.write("  " + item.path + " (" + size$1(item.bytes) + ", " + item.reason + ")\n");
+			const known = omitted.every((item) => item.bytes !== void 0);
+			ctx.stderr.write("warning: left out " + omitted.length + " file" + (omitted.length === 1 ? "" : "s") + (known ? " (" + size$1(omitted.reduce((total, item) => total + (item.bytes ?? 0), 0)) + ")" : "") + "; fetch one with curl -sLO " + raw + "PATH\n");
+			for (const item of omitted.slice(0, 10)) ctx.stderr.write("  " + item.path + " (" + (item.bytes === void 0 ? "" : size$1(item.bytes) + ", ") + item.reason + ")\n");
 			if (omitted.length > 10) ctx.stderr.write("  ... and " + (omitted.length - 10) + " more, listed in .git/nanocode.json\n");
 		}
-		if (!options.quiet) ctx.stderr.write("Downloaded " + count + " files (" + size$1(written) + ") from " + options.repository + " at " + (snapshot.commit ? snapshot.commit.slice(0, 7) : ref) + ": a source snapshot without history" + (skipped ? "; skipped " + skipped + " symbolic link" + (skipped === 1 ? "" : "s") : "") + ".\n");
+		if (!options.quiet) ctx.stderr.write("Downloaded " + count + " files (" + size$1(written) + ") from " + options.repository + " at " + (snapshot.commit ? snapshot.commit.slice(0, 7) : ref) + ": a source snapshot without history" + (skipped ? "; skipped " + skipped + " symbolic link" + (skipped === 1 ? "" : "s") : "") + (submodules ? "; skipped " + submodules + " submodule" + (submodules === 1 ? "" : "s") : "") + ".\n");
 		return 0;
 	}
 	function size$1(bytes) {
@@ -24731,8 +26821,10 @@ zstd: *.zst, *.zstd
 		const full = repo.root + "/" + path;
 		const stat = await ctx.fs.stat(full);
 		if (!stat || stat.kind !== "file") return null;
-		const cached = repo.local.stat[path] ?? repo.snapshot.files[path];
-		if (cached && cached[0] === stat.size && cached[1] === stat.mtime) {
+		const local = repo.local.stat[path];
+		const cached = local ?? repo.snapshot.files[path];
+		const racy = local !== void 0 && !((local[3] ?? 0) > stat.mtime);
+		if (cached && cached[0] === stat.size && cached[1] === stat.mtime && !racy) {
 			const id = cached[2] ?? "base:" + path;
 			if (keep && !id.startsWith("base:") && !await ctx.fs.stat(repo.root + "/.git/objects/" + id)) await store(ctx, repo, id, await ctx.fs.read(full));
 			return id;
@@ -24742,7 +26834,8 @@ zstd: *.zst, *.zstd
 		repo.local.stat[path] = [
 			stat.size,
 			stat.mtime,
-			id
+			id,
+			Date.now()
 		];
 		if (keep) await store(ctx, repo, id, data);
 		return id;
@@ -25205,7 +27298,8 @@ zstd: *.zst, *.zstd
 			if (stat && !ref.startsWith("base:")) repo.local.stat[path] = [
 				stat.size,
 				stat.mtime,
-				ref
+				ref,
+				Date.now()
 			];
 		}
 	}
@@ -29111,10 +31205,727 @@ zstd: *.zst, *.zstd
 		}
 		return status;
 	};
+	// src/bash/internal/commands/pylazy.ts
+	const S_IFDIR = 16384;
+	const S_IFREG = 32768;
+	const mounted = /* @__PURE__ */ new WeakMap();
+	const WRITES = 1603;
+	function join$2(base, name) {
+		return base === "/" ? "/" + name : base + "/" + name;
+	}
+	function within$2(path, dir) {
+		return path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
+	}
+	function detach(pyodide) {
+		const fs = pyodide.FS;
+		fs.chdir("/");
+		for (const root of mounted.get(pyodide) ?? []) fs.unmount(root);
+		mounted.delete(pyodide);
+	}
+	function attach(pyodide, files, roots) {
+		detach(pyodide);
+		const fs = pyodide.FS;
+		const codes = pyodide.ERRNO_CODES;
+		const MEMFS = fs.filesystems.MEMFS;
+		const fail = (error) => new fs.ErrnoError(codes[error.code ?? "EIO"] ?? codes["EIO"] ?? 0);
+		const fill = (node) => {
+			const host = node.lazyDir;
+			if (host === void 0) return;
+			node.lazyDir = void 0;
+			const names = (() => {
+				try {
+					return files.list(host);
+				} catch (error) {
+					throw fail(error);
+				}
+			})();
+			const contents = node.contents;
+			for (const name of names) {
+				if (name in contents) continue;
+				const stat = files.stat(join$2(host, name));
+				if (!stat) continue;
+				const dir = stat.kind === "directory";
+				const child = MEMFS.createNode(node, name, (dir ? S_IFDIR : S_IFREG) | stat.mode & 511, 0);
+				child.atime = child.mtime = child.ctime = stat.mtime;
+				if (dir) {
+					child.lazyDir = join$2(host, name);
+					child.node_ops = ops.dir;
+					continue;
+				}
+				child.lazyFile = join$2(host, name);
+				child.lazySize = stat.size;
+				child.node_ops = ops.file;
+				child.stream_ops = ops.stream;
+			}
+			node.atime = node.mtime = node.ctime = Date.now();
+		};
+		const materialize = (node) => {
+			const host = node.lazyFile;
+			if (host === void 0) return;
+			const data = (() => {
+				try {
+					return files.read(host);
+				} catch (error) {
+					throw fail(error);
+				}
+			})();
+			node.lazyFile = void 0;
+			node.contents = data;
+			node.usedBytes = data.length;
+		};
+		const dir = MEMFS.ops_table.dir.node;
+		const file = MEMFS.ops_table.file;
+		const ops = {
+			dir: {
+				...dir,
+				lookup(parent, name) {
+					fill(parent);
+					const node = parent.contents[name];
+					if (!node) throw new fs.ErrnoError(codes["ENOENT"] ?? 0);
+					return node;
+				},
+				readdir(node) {
+					fill(node);
+					return dir.readdir(node);
+				},
+				rename(node, target, name) {
+					const existing = target.contents[name];
+					if (existing) fill(existing);
+					return dir.rename(node, target, name);
+				},
+				rmdir(parent, name) {
+					const existing = parent.contents[name];
+					if (existing) fill(existing);
+					return dir.rmdir(parent, name);
+				}
+			},
+			file: {
+				...file.node,
+				getattr(node) {
+					const attr = file.node.getattr(node);
+					if (node.lazyFile === void 0) return attr;
+					attr.size = node.lazySize ?? 0;
+					attr.blocks = Math.ceil(attr.size / attr.blksize);
+					return attr;
+				},
+				setattr(node, attr) {
+					if (attr.size === 0) node.lazyFile = void 0;
+					else if (attr.size !== void 0) materialize(node);
+					return file.node.setattr(node, attr);
+				}
+			},
+			stream: {
+				...file.stream,
+				open(stream) {
+					materialize(stream.node);
+				}
+			}
+		};
+		for (const root of roots) {
+			fs.mkdirTree(root);
+			const node = fs.mount(MEMFS, {}, root);
+			node.lazyDir = root;
+			node.node_ops = ops.dir;
+		}
+		mounted.set(pyodide, roots);
+		const dirty = /* @__PURE__ */ new Set();
+		const gone = /* @__PURE__ */ new Set();
+		const absolute = (path) => {
+			if (path.startsWith("/")) return path;
+			const cwd = fs.cwd();
+			return (cwd === "/" ? "" : cwd) + "/" + path;
+		};
+		const delegate = fs.trackingDelegate;
+		const truncate = fs.truncate;
+		delegate["onOpenFile"] = ((path, flags) => {
+			if (flags & WRITES) dirty.add(absolute(path));
+		});
+		delegate["onWriteToFile"] = ((path) => dirty.add(absolute(path)));
+		delegate["onMovePath"] = ((from, to) => {
+			gone.add(absolute(from));
+			dirty.add(absolute(to));
+		});
+		delegate["onDeletePath"] = ((path) => gone.add(absolute(path)));
+		delegate["onMakeDirectory"] = ((path) => {
+			if (!fs.analyzePath(path).exists) dirty.add(absolute(path));
+		});
+		fs.truncate = (path, length) => {
+			if (typeof path === "string") dirty.add(absolute(path));
+			return truncate.call(fs, path, length);
+		};
+		return { finish() {
+			const found = {
+				files: /* @__PURE__ */ new Map(),
+				dirs: [],
+				deleted: []
+			};
+			const dirs = /* @__PURE__ */ new Set();
+			const deleted = /* @__PURE__ */ new Set();
+			const visit = (path) => {
+				if (!roots.some((root) => within$2(path, root))) return;
+				if (!fs.analyzePath(path).exists) return void deleted.add(path);
+				const mode = fs.stat(path).mode;
+				if (fs.isFile(mode)) return void found.files.set(path, fs.readFile(path));
+				if (!fs.isDir(mode) || dirs.has(path)) return;
+				dirs.add(path);
+				for (const name of fs.readdir(path)) if (name !== "." && name !== "..") visit(join$2(path, name));
+			};
+			for (const path of [...gone, ...dirty]) visit(path);
+			for (const key of [
+				"onOpenFile",
+				"onWriteToFile",
+				"onMovePath",
+				"onDeletePath",
+				"onMakeDirectory"
+			]) delete delegate[key];
+			fs.truncate = truncate;
+			detach(pyodide);
+			found.dirs = [...dirs];
+			found.deleted = [...deleted];
+			return found;
+		} };
+	}
+	// src/bash/internal/commands/rustpython.ts
+	init_FileSystem();
+	init_Fs();
+	init_Shell();
+	const errno = {
+		EACCES: 13,
+		EAGAIN: 11,
+		EEXIST: 17,
+		EFBIG: 27,
+		EINVAL: 22,
+		EINTR: 4,
+		EIO: 5,
+		EISDIR: 21,
+		ENOENT: 2,
+		ENOTDIR: 20,
+		ENOTEMPTY: 39,
+		ENOTSUP: 95,
+		EROFS: 30
+	};
+	const instances$1 = /* @__PURE__ */ new WeakMap();
+	const randomBytes = 65536;
+	const text$2 = new TextDecoder();
+	const limits = [
+		"output",
+		"sleep",
+		"steps",
+		"time",
+		"memory"
+	];
+	function instantiate(module) {
+		const state = {
+			exports: void 0,
+			files: void 0,
+			initial: 0,
+			panic: void 0,
+			running: false,
+			spawn: void 0,
+			stopped: () => false
+		};
+		const view = (ptr, len) => new Uint8Array(state.exports.memory.buffer, ptr >>> 0, len >>> 0);
+		const reply = (data) => {
+			view(state.exports.python_reply(data.length), data.length).set(data);
+			return BigInt(data.length);
+		};
+		const stat = /* @__PURE__ */ new Uint8Array(24);
+		const stats = new DataView(stat.buffer);
+		const found = (files, path) => {
+			const entry = files.stat(path);
+			if (!entry) throw new FsError("ENOENT", path);
+			return entry;
+		};
+		const ops = [
+			(files, path) => {
+				const entry = found(files, path);
+				stats.setUint32(0, entry.kind === "directory" ? 1 : 0, true);
+				stats.setUint32(4, entry.mode, true);
+				stats.setBigUint64(8, BigInt(entry.size), true);
+				stats.setBigInt64(16, BigInt(Math.trunc(entry.mtime)) * 1000000n, true);
+				return reply(stat);
+			},
+			(files, path) => reply(files.read(path)),
+			(files, path, data, how) => {
+				if (how === 2n && files.stat(path)) throw new FsError("EEXIST", path);
+				files.write(path, data.slice(), how === 1n);
+				return 0n;
+			},
+			(files, path) => reply(encode(files.list(path).map((name) => name + "\0").join(""))),
+			(files, path) => {
+				if (files.stat(path)) throw new FsError("EEXIST", path);
+				files.mkdir(path);
+				return 0n;
+			},
+			(files, path, _data, what) => {
+				const entry = found(files, path);
+				if (what === 0n && entry.kind === "directory") throw new FsError("EISDIR", path);
+				if (what === 1n && entry.kind !== "directory") throw new FsError("ENOTDIR", path);
+				if (what === 1n && files.list(path).length) throw new FsError("ENOTEMPTY", path);
+				files.remove(path);
+				return 0n;
+			},
+			(files, path, data) => {
+				files.rename(path, decode(data));
+				return 0n;
+			}
+		];
+		state.exports = new WebAssembly.Instance(module, { python: {
+			host_fs(op, path, pathLen, data, dataLen, arg) {
+				const files = state.files;
+				const handler = ops[op];
+				if (!files || !handler) return -BigInt(errno["ENOTSUP"] ?? 0);
+				try {
+					return handler(files, decode(view(path, pathLen)), view(data, dataLen), arg);
+				} catch (error) {
+					const code = error instanceof FsError ? errno[error.code] : void 0;
+					if (code === void 0) throw error;
+					return -BigInt(code);
+				}
+			},
+			host_now: () => performance.now(),
+			host_panic(ptr, len) {
+				state.panic = decode(view(ptr, len));
+			},
+			host_random(ptr, len) {
+				for (let at = 0; at < len; at += randomBytes) crypto.getRandomValues(view(ptr + at, Math.min(randomBytes, len - at)));
+			},
+			host_spawn(ptr, len) {
+				const spawn = state.spawn;
+				if (!spawn) return -BigInt(errno["ENOTSUP"] ?? 0);
+				const bytes = view(ptr, len).slice();
+				const data = new DataView(bytes.buffer);
+				let at = 0;
+				const u32 = () => {
+					const value = data.getUint32(at, true);
+					at += 4;
+					return value;
+				};
+				const field = () => {
+					const size = u32();
+					const value = bytes.subarray(at, at + size);
+					at += size;
+					return value;
+				};
+				const argv = Array.from({ length: u32() }, () => decode(field()));
+				const env = {};
+				for (let count = u32(); count > 0; count--) env[decode(field())] = decode(field());
+				const cwd = decode(field());
+				const stdin = field();
+				const exited = spawn({
+					argv,
+					cwd,
+					env,
+					merged: u32() !== 0,
+					stdin
+				});
+				if (typeof exited === "string") return -BigInt(errno[exited] ?? errno["EIO"] ?? 0);
+				const out = new Uint8Array(12 + exited.stdout.length + exited.stderr.length);
+				const fields = new DataView(out.buffer);
+				fields.setInt32(0, exited.status, true);
+				fields.setUint32(4, exited.stdout.length, true);
+				out.set(exited.stdout, 8);
+				fields.setUint32(8 + exited.stdout.length, exited.stderr.length, true);
+				out.set(exited.stderr, 12 + exited.stdout.length);
+				return reply(out);
+			},
+			host_stopped: () => state.stopped() ? 1 : 0,
+			host_time: () => Date.now()
+		} }).exports;
+		state.initial = state.exports.memory.buffer.byteLength;
+		return state;
+	}
+	function layered(fs, options) {
+		const stats = /* @__PURE__ */ new Map();
+		const names = /* @__PURE__ */ new Map();
+		const bytes = /* @__PURE__ */ new Map();
+		const trees = /* @__PURE__ */ new Set();
+		const batched = /* @__PURE__ */ new Set();
+		const wanted = {
+			list: /* @__PURE__ */ new Set(),
+			read: /* @__PURE__ */ new Set(),
+			stat: /* @__PURE__ */ new Set(),
+			tree: /* @__PURE__ */ new Set()
+		};
+		let held = 0;
+		let missing = false;
+		let files = /* @__PURE__ */ new Map();
+		let dirs = /* @__PURE__ */ new Set();
+		let gone = /* @__PURE__ */ new Set();
+		let touched = /* @__PURE__ */ new Set();
+		let made = /* @__PURE__ */ new Set();
+		const miss = (set, path) => {
+			set.add(path);
+			missing = true;
+			return new FsError("EIO", path);
+		};
+		const hidden = (path) => {
+			if (files.has(path) || dirs.has(path)) return false;
+			for (let at = path;; at = parentOf(at)) {
+				if (gone.has(at)) return true;
+				if (at === "/") return false;
+			}
+		};
+		const kind = (path) => {
+			if (files.has(path)) return "file";
+			if (dirs.has(path)) return "directory";
+			if (hidden(path)) return void 0;
+			if (!stats.has(path)) throw miss(wanted.stat, path);
+			return stats.get(path)?.kind;
+		};
+		const read = (path) => {
+			const own = files.get(path);
+			if (own) return own;
+			const found = kind(path);
+			if (found !== "file") throw new FsError(found ? "EISDIR" : "ENOENT", path);
+			const data = bytes.get(path);
+			if (!data) throw miss(wanted.read, path);
+			return data;
+		};
+		const list = (path) => {
+			const found = kind(path);
+			if (found !== "directory") throw new FsError(found ? "ENOTDIR" : "ENOENT", path);
+			const listed = /* @__PURE__ */ new Set();
+			if (!made.has(path) && !hidden(path)) {
+				const base = names.get(path);
+				if (!base) throw miss(wanted.list, path);
+				for (const name of base) if (!hidden(join$1(path, name))) listed.add(name);
+			}
+			for (const key of [...files.keys(), ...dirs]) if (key !== "/" && parentOf(key) === path) listed.add(key.slice(path === "/" ? 1 : path.length + 1));
+			return [...listed].sort();
+		};
+		const parent = (path) => {
+			if (kind(parentOf(path)) !== "directory") throw new FsError("ENOENT", path);
+		};
+		const remove = (path) => {
+			files.delete(path);
+			dirs.delete(path);
+			touched.delete(path);
+			made.delete(path);
+			gone.add(path);
+		};
+		const write = (path, data, append) => {
+			if (kind(path) === "directory") throw new FsError("EISDIR", path);
+			parent(path);
+			const before = append && kind(path) === "file" ? read(path) : void 0;
+			const joined = before ? new Uint8Array(before.length + data.length) : data;
+			if (before) {
+				joined.set(before);
+				joined.set(data, before.length);
+			}
+			files.set(path, joined);
+			touched.add(path);
+		};
+		const copy = (from, to) => {
+			if (kind(from) === "file") return write(to, read(from));
+			dirs.add(to);
+			made.add(to);
+			for (const name of list(from)) copy(join$1(from, name), join$1(to, name));
+		};
+		const weight = (paths) => paths.reduce((total, path) => total + encode(path).length, 0);
+		const keepStat = (path, stat) => {
+			if (!stats.has(path)) held += encode(path).length;
+			stats.set(path, stat);
+		};
+		const keepNames = (path, children) => {
+			held += weight(children) - weight(names.get(path) ?? []);
+			names.set(path, children);
+		};
+		const keepBytes = (path, data) => {
+			held += data.length - (bytes.get(path)?.length ?? 0);
+			bytes.set(path, data);
+		};
+		const fits = (more) => held + more <= options.limits.maxMemoryBytes;
+		const linked = async (path) => (await fs.lstat?.(path))?.kind === "symlink";
+		const prefetch = async (root) => {
+			trees.add(root);
+			let level = [root];
+			while (level.length) {
+				const fresh = level.filter((path) => !names.has(path));
+				const lists = await Promise.all(fresh.map((path) => fs.list(path)));
+				const listed = new Map(fresh.map((path, index) => [path, lists[index] ?? []]));
+				const children = level.flatMap((path) => (listed.get(path) ?? names.get(path) ?? []).map((name) => join$1(path, name)));
+				const unknown = children.filter((path) => !stats.has(path));
+				const found = await Promise.all(unknown.map((path) => fs.stat(path)));
+				if (!fits(weight(lists.flat()) + weight(unknown))) return;
+				for (const [path, entries] of listed) keepNames(path, entries);
+				unknown.forEach((path, index) => keepStat(path, found[index] ?? null));
+				const below = children.filter((path) => stats.get(path)?.kind === "directory");
+				const links = await Promise.all(below.map(linked));
+				level = below.filter((_path, index) => !links[index]);
+			}
+		};
+		const filesIn = (dir) => (names.get(dir) ?? []).map((name) => join$1(dir, name)).filter((path) => stats.get(path)?.kind === "file");
+		const filesUnder = (root) => [...stats].filter((entry) => entry[1]?.kind === "file" && within$1(entry[0], root)).map((entry) => entry[0]);
+		const batch = (path) => {
+			const dir = parentOf(path);
+			const root = batched.size > 1 ? [...trees].find((tree) => within$1(path, tree)) : void 0;
+			const pool = [root ? filesUnder(root) : [], filesIn(dir).some((sibling) => bytes.has(sibling)) ? filesIn(dir) : []].map((pool) => pool.filter((file) => !bytes.has(file))).find((files) => files.includes(path) && fits(files.reduce((total, file) => total + (stats.get(file)?.size ?? 0), 0)));
+			if (!pool) return [path];
+			batched.add(dir);
+			return pool;
+		};
+		const fetchTree = async (path) => {
+			const stat = stats.has(path) ? stats.get(path) : await fs.stat(path);
+			keepStat(path, stat ?? null);
+			if (stat?.kind === "file" && !bytes.has(path)) keepBytes(path, await fs.read(path));
+			if (stat?.kind !== "directory") return;
+			const children = names.get(path) ?? await fs.list(path);
+			keepNames(path, children);
+			for (const name of children) await fetchTree(join$1(path, name));
+		};
+		const fetchAll = async (paths) => {
+			const data = await Promise.all(paths.map((path) => fs.read(path)));
+			paths.forEach((path, index) => keepBytes(path, data[index] ?? /* @__PURE__ */ new Uint8Array()));
+		};
+		const checked = () => budget$1(options.limits, held, "the " + stats.size + " paths and " + bytes.size + " files this Python run used");
+		return {
+			changes: () => ({
+				deleted: [...gone].filter((path) => kind(path) === void 0),
+				dirs: [...made].filter((path) => dirs.has(path)),
+				files: new Map([...touched].flatMap((path) => {
+					const data = files.get(path);
+					return data ? [[path, data]] : [];
+				}))
+			}),
+			async fetch() {
+				for (const path of wanted.stat) keepStat(path, await fs.stat(path));
+				for (const path of wanted.list) {
+					const up = parentOf(path);
+					const siblings = path === "/" ? void 0 : names.get(up);
+					if (siblings?.some((name) => join$1(up, name) !== path && names.has(join$1(up, name)))) await prefetch(up);
+					else if (siblings) await prefetch(path);
+					if (names.has(path)) continue;
+					const children = await fs.list(path);
+					keepNames(path, children);
+					for (const name of children) {
+						const child = join$1(path, name);
+						if (!stats.has(child)) keepStat(child, await fs.stat(child));
+					}
+				}
+				await fetchAll([...new Set([...wanted.read].flatMap(batch))]);
+				for (const path of wanted.tree) {
+					await prefetch(path);
+					await fetchAll(filesUnder(path).filter((file) => !bytes.has(file)));
+					await fetchTree(path);
+				}
+				for (const set of Object.values(wanted)) set.clear();
+				checked();
+			},
+			files: {
+				list,
+				mkdir: (path) => {
+					if (kind(path)) throw new FsError("EEXIST", path);
+					parent(path);
+					dirs.add(path);
+					made.add(path);
+				},
+				read,
+				remove: (path) => {
+					if (!kind(path)) throw new FsError("ENOENT", path);
+					remove(path);
+				},
+				rename: (from, to) => {
+					const found = kind(from);
+					if (!found) throw new FsError("ENOENT", from);
+					if (found === "directory" && !bytes.has(from) && !names.has(from) && !made.has(from)) throw miss(wanted.tree, from);
+					parent(to);
+					kind(to);
+					remove(to);
+					try {
+						copy(from, to);
+					} catch (error) {
+						if (missing) wanted.tree.add(from);
+						throw error;
+					}
+					remove(from);
+				},
+				stat: (path) => {
+					if (!kind(path)) return null;
+					if (files.has(path)) return {
+						kind: "file",
+						mode: 420,
+						mtime: Date.now(),
+						size: files.get(path)?.length ?? 0
+					};
+					if (dirs.has(path)) return {
+						kind: "directory",
+						mode: 493,
+						mtime: Date.now(),
+						size: 0
+					};
+					return stats.get(path) ?? null;
+				},
+				write
+			},
+			missed: () => missing,
+			reset() {
+				missing = false;
+				files = /* @__PURE__ */ new Map();
+				dirs = /* @__PURE__ */ new Set();
+				gone = /* @__PURE__ */ new Set();
+				touched = /* @__PURE__ */ new Set();
+				made = /* @__PURE__ */ new Set();
+			}
+		};
+	}
+	function join$1(base, name) {
+		return base === "/" ? "/" + name : base + "/" + name;
+	}
+	function within$1(path, dir) {
+		return path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
+	}
+	function encodeRequest(request, spawns) {
+		const parts = [];
+		const u32 = (value) => {
+			const bytes = /* @__PURE__ */ new Uint8Array(4);
+			new DataView(bytes.buffer).setUint32(0, value, true);
+			parts.push(bytes);
+		};
+		const u64 = (value) => {
+			const bytes = /* @__PURE__ */ new Uint8Array(8);
+			new DataView(bytes.buffer).setBigUint64(0, value, true);
+			parts.push(bytes);
+		};
+		const field = (value) => {
+			const bytes = typeof value === "string" ? encode(value) : value;
+			u32(bytes.length);
+			parts.push(bytes);
+		};
+		u32(request.argv.length);
+		for (const arg of request.argv) field(arg);
+		field(request.cwd);
+		const env = Object.entries(request.env);
+		u32(env.length);
+		for (const [name, value] of env) {
+			field(name);
+			field(value);
+		}
+		field(request.stdin);
+		u64(BigInt(request.output));
+		u64(BigInt(request.file));
+		u64(BigInt(request.steps));
+		u64(BigInt(Math.max(0, Math.ceil(request.timeMs))));
+		u64(BigInt(request.depth));
+		u64(BigInt(request.memory));
+		u32(spawns ? 1 : 0);
+		const joined = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+		let at = 0;
+		for (const part of parts) {
+			joined.set(part, at);
+			at += part.length;
+		}
+		return joined;
+	}
+	function decodeRan(bytes) {
+		const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		let at = 0;
+		const u32 = () => {
+			const value = data.getUint32(at, true);
+			at += 4;
+			return value;
+		};
+		const field = () => {
+			const len = u32();
+			const value = bytes.subarray(at, at + len);
+			at += len;
+			return value;
+		};
+		const tag = u32();
+		const value = u32();
+		const stdout = field();
+		const stderr = field();
+		const u64 = () => {
+			const value = data.getBigUint64(at, true);
+			at += 8;
+			return value;
+		};
+		const steps = u64();
+		const held = u64();
+		const asked = u64();
+		const missing = [];
+		for (let count = u32(); count > 0; count--) {
+			const module = text$2.decode(field());
+			const why = u32();
+			missing.push({
+				module,
+				package: why === 0,
+				text: text$2.decode(field())
+			});
+		}
+		if (tag === 0) return {
+			kind: "exited",
+			status: value | 0,
+			stderr,
+			stdout
+		};
+		if (tag === 1) return {
+			kind: "needs",
+			missing
+		};
+		if (tag === 2) return {
+			kind: "refused",
+			limit: value,
+			stderr,
+			stdout,
+			steps,
+			held,
+			asked
+		};
+		return {
+			kind: "cancelled",
+			stderr,
+			stdout
+		};
+	}
+	function prepare(module) {
+		if (!instances$1.has(module)) instances$1.set(module, instantiate(module));
+	}
+	function run(module, options) {
+		if (instances$1.get(module)?.running) instances$1.delete(module);
+		prepare(module);
+		const instance = instances$1.get(module);
+		instance.files = options.files;
+		instance.stopped = options.stopped;
+		instance.spawn = options.spawn;
+		try {
+			const input = encodeRequest(options.request, options.spawn !== void 0);
+			const ptr = instance.exports.python_input(input.length);
+			new Uint8Array(instance.exports.memory.buffer, ptr, input.length).set(input);
+			instance.running = true;
+			const len = instance.exports.python_run();
+			instance.running = false;
+			if (instance.exports.memory.buffer.byteLength - instance.initial > options.request.memory / 2) instances$1.delete(module);
+			return decodeRan(new Uint8Array(instance.exports.memory.buffer, instance.exports.python_output(), len).slice());
+		} catch (error) {
+			instances$1.delete(module);
+			throw new CommandError("the Python interpreter failed and restarts on the next run: " + (instance.panic ?? (error instanceof Error ? error.message : String(error))), 1);
+		} finally {
+			instance.files = void 0;
+			instance.spawn = void 0;
+			instance.stopped = () => false;
+		}
+	}
+	function mib(bytes) {
+		return (Number(bytes) / 1048576).toFixed(1);
+	}
+	function report(ctx, ran, budget) {
+		ctx.stdout.write(decode(ran.stdout));
+		ctx.stderr.write(decode(ran.stderr));
+		if (ran.kind === "exited") return ran.status;
+		if (ran.kind === "cancelled") throw new CommandError("interrupted", 130);
+		const limit = limits[ran.limit];
+		if (limit === "time") throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
+		if (limit === "output") throw new CommandError("it printed more than this shell keeps", 126);
+		if (limit === "memory") throw new CommandError((ran.asked > 0n ? "it asked for " + mib(ran.asked) + " MiB at once while holding " + mib(ran.held) + " MiB" : "it held " + mib(ran.held) + " MiB") + ", past the " + mib(ctx.limits.maxMemoryBytes) + " MiB this shell gives one Python run (the host's maxMemoryBytes limit); read and process the data in chunks (a file line by line, a batch of rows at a time) and write results out as you go instead of holding it all", 126);
+		if (limit === "sleep") throw new CommandError("it cannot wait in this shell", 126);
+		throw new CommandError("it ran " + ran.steps + " steps, the most one Python run may compute here" + (budget.stepsPerMs === void 0 ? "" : " (" + budget.cpuMs + " ms of CPU at " + budget.stepsPerMs + " steps per ms; the host raises it with Python's cpuMs option, on Cloudflare with the PYTHON_CPU_MS variable or workspace.pythonCpuMs)") + "; split the work into shorter runs that save their progress to a file and continue from it", 124);
+	}
 	// src/bash/internal/commands/pyworker.ts
+	init_FileSystem();
 	init_Shell();
 	const SOURCE = String.raw`
-const { parentPort, workerData } = require("node:worker_threads");
+const { parentPort, receiveMessageOnPort, workerData } = require("node:worker_threads");
 const { createRequire } = require("node:module");
 const RESERVED = ["/dev", "/proc", "/lib", "/home/pyodide", "/home/web_user"];
 const reserved = path => RESERVED.some(prefix => path === prefix || path.startsWith(prefix + "/"));
@@ -29122,7 +31933,9 @@ const join = (base, name) => base === "/" ? "/" + name : base + "/" + name;
 const within = (path, dir) => path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
 const parentOf = path => { const i = path.lastIndexOf("/"); return i <= 0 ? "/" : path.slice(0, i); };
 const decoder = new TextDecoder();
-let py, start, cancel, loading, micropip = false, mirrored = [], mirror = null, known = new Map(), tracking = null;
+let py, start, cancel, loading, micropip = false, mirrored = [], mirror = null, known = new Map(), tracking = null, lazy = null, lazyOps = null;
+const S_IFDIR = 0o40000;
+const S_IFREG = 0o100000;
 const WRITES = 1 | 2 | 64 | 512 | 1024;
 const PARKED_BYTES = 64 * 1024 * 1024;
 const parked = new Map();
@@ -29137,7 +31950,7 @@ function track(fs) {
   delegate.onWriteToFile = path => { if (tracking) tracking.dirty.add(absolute(path)); };
   delegate.onMovePath = (from, to) => { if (tracking) { tracking.gone.add(absolute(from)); tracking.dirty.add(absolute(to)); } };
   delegate.onDeletePath = path => { if (tracking) tracking.gone.add(absolute(path)); };
-  delegate.onMakeDirectory = path => { if (tracking) tracking.dirty.add(absolute(path)); };
+  delegate.onMakeDirectory = path => { if (tracking && !fs.analyzePath(path).exists) tracking.dirty.add(absolute(path)); };
   const truncate = fs.truncate.bind(fs);
   fs.truncate = (path, length) => { if (tracking && typeof path === "string") tracking.dirty.add(absolute(path)); return truncate(path, length); };
 }
@@ -29162,12 +31975,113 @@ async function load() {
     try { mod = createRequire(from)("pyodide"); break; } catch {}
   }
   if (!mod) mod = await import("pyodide");
-  py = await mod.loadPyodide({ packageCacheDir: workerData.cacheDir, stdout: () => {}, stderr: () => {} });
+  const options = { packageCacheDir: workerData.cacheDir, stdout: () => {}, stderr: () => {} };
+  const fs = require("node:fs");
+  const snapshot = workerData.cacheDir + "/pyodide-" + mod.version + ".snapshot";
+  const saved = fs.existsSync(snapshot) ? fs.readFileSync(snapshot) : undefined;
+  if (saved) py = await mod.loadPyodide({ ...options, _loadSnapshot: saved }).catch(() => undefined);
+  if (!py) {
+    py = await mod.loadPyodide({ ...options, _makeSnapshot: true });
+    const partial = snapshot + "." + process.pid + ".partial";
+    fs.mkdirSync(workerData.cacheDir, { recursive: true });
+    fs.writeFileSync(partial, py.makeMemorySnapshot());
+    fs.renameSync(partial, snapshot);
+  }
   track(py.FS);
   const ns = py.globals.get("dict")();
   py.runPython(workerData.helper, { globals: ns });
   start = ns.get("start");
   cancel = ns.get("cancel");
+}
+function ask(op, path) {
+  Atomics.store(lazy.flag, 0, 0);
+  parentPort.postMessage({ id: lazy.id, type: "fs", op, path });
+  Atomics.wait(lazy.flag, 0, 0);
+  const reply = receiveMessageOnPort(lazy.port).message;
+  if (reply.code !== undefined) throw new py.FS.ErrnoError(py.ERRNO_CODES[reply.code] ?? py.ERRNO_CODES.EIO);
+  return reply.value;
+}
+function fill(node) {
+  if (node.lazyDir === undefined) return;
+  const host = node.lazyDir;
+  node.lazyDir = undefined;
+  const MEMFS = py.FS.filesystems.MEMFS;
+  for (const [name, kind, size, mtime, mode] of ask("list", host)) {
+    if (name in node.contents) continue;
+    const dir = kind === "directory";
+    const child = MEMFS.createNode(node, name, (dir ? S_IFDIR : S_IFREG) | (mode & 0o777), 0);
+    child.atime = child.mtime = child.ctime = mtime;
+    if (dir) {
+      child.lazyDir = join(host, name);
+      child.node_ops = lazyOps.dir;
+      continue;
+    }
+    child.lazyFile = join(host, name);
+    child.lazySize = size;
+    child.node_ops = lazyOps.file;
+    child.stream_ops = lazyOps.stream;
+  }
+  node.atime = node.mtime = node.ctime = Date.now();
+}
+function materialize(node) {
+  if (node.lazyFile === undefined) return;
+  const data = ask("read", node.lazyFile);
+  node.lazyFile = undefined;
+  node.contents = data;
+  node.usedBytes = data.length;
+}
+function tables(MEMFS) {
+  if (lazyOps) return lazyOps;
+  const dir = MEMFS.ops_table.dir.node;
+  const file = MEMFS.ops_table.file;
+  lazyOps = {
+    dir: {
+      ...dir,
+      lookup(parent, name) {
+        fill(parent);
+        const node = parent.contents[name];
+        if (!node) throw new py.FS.ErrnoError(py.ERRNO_CODES.ENOENT);
+        return node;
+      },
+      readdir(node) { fill(node); return dir.readdir(node); },
+      rename(node, target, name) { if (target.contents[name]) fill(target.contents[name]); return dir.rename(node, target, name); },
+      rmdir(parent, name) { if (parent.contents[name]) fill(parent.contents[name]); return dir.rmdir(parent, name); },
+    },
+    file: {
+      ...file.node,
+      getattr(node) {
+        const attr = file.node.getattr(node);
+        if (node.lazyFile !== undefined) {
+          attr.size = node.lazySize;
+          attr.blocks = Math.ceil(attr.size / attr.blksize);
+        }
+        return attr;
+      },
+      setattr(node, attr) {
+        if (attr.size === 0) node.lazyFile = undefined;
+        else if (attr.size !== undefined) materialize(node);
+        return file.node.setattr(node, attr);
+      },
+    },
+    stream: { ...file.stream, open(stream) { materialize(stream.node); } },
+  };
+  return lazyOps;
+}
+function attach(roots) {
+  const fs = py.FS;
+  const MEMFS = fs.filesystems.MEMFS;
+  for (const root of roots) {
+    fs.mkdirTree(root);
+    const node = fs.mount(MEMFS, {}, root);
+    const ops = tables(MEMFS);
+    node.lazyDir = root;
+    node.node_ops = ops.dir;
+  }
+}
+function detach(roots) {
+  const fs = py.FS;
+  fs.chdir("/");
+  for (const root of roots) fs.unmount(root);
 }
 function unmirror(fs, path) {
   if (reserved(path) || !fs.analyzePath(path).exists) return;
@@ -29248,6 +32162,10 @@ function sync(message) {
 async function run(id, job) {
   const fs = py.FS;
   const out = (fd, text) => parentPort.postMessage({ id, type: "out", fd, text });
+  if (job.lazy) {
+    lazy = { id, flag: new Int32Array(job.lazy.flag), port: job.lazy.port };
+    attach(job.roots);
+  }
   for (const [path, data, stamp] of job.files) {
     fs.mkdirTree(parentOf(path));
     fs.writeFile(path, data);
@@ -29277,6 +32195,11 @@ async function run(id, job) {
   }
   const found = changes(fs, job.roots);
   tracking = null;
+  if (lazy) {
+    detach(job.roots);
+    lazy.port.close();
+    lazy = null;
+  }
   for (const path of [...found.files.keys(), ...found.deleted]) known.delete(path);
   parentPort.postMessage({ id, type: "done", status, files: found.files, dirs: found.dirs, deleted: found.deleted });
 }
@@ -29334,6 +32257,7 @@ parentPort.on("message", async message => {
 			const pending = current.pending.get(data.id);
 			if (!pending) return;
 			if (data.type === "out") return pending.output?.(data.fd ?? 1, data.text ?? "");
+			if (data.type === "fs") return pending.serve?.(data);
 			current.pending.delete(data.id);
 			if (!current.pending.size) port.unref?.();
 			if (data.type === "error") pending.reject(new Error(data.message ?? "python worker failed"));
@@ -29344,14 +32268,15 @@ parentPort.on("message", async message => {
 		port.unref?.();
 		return current;
 	}
-	function call(helper, cacheDir, message, output, transfer = []) {
+	function call(helper, cacheDir, message, output, transfer = [], serve) {
 		const current = remote ??= spawn(helper, cacheDir);
 		const id = ++current.next;
 		const result = new Promise((resolve, reject) => {
 			current.pending.set(id, {
 				resolve,
 				reject,
-				...output ? { output } : {}
+				...output ? { output } : {},
+				...serve ? { serve } : {}
 			});
 		});
 		current.port.ref?.();
@@ -29400,13 +32325,27 @@ parentPort.on("message", async message => {
 					failure ??= error;
 				}
 			};
+			const channel = job.lazy ? new MessageChannel() : void 0;
+			const answered = new SharedArrayBuffer(4);
+			const serve = (request) => void answer(ctx.fs, String(request["op"]), String(request["path"])).then((reply) => reply, (error) => {
+				failure ??= error;
+				return { code: "EIO" };
+			}).then((reply) => {
+				channel?.port1.postMessage(reply);
+				Atomics.store(new Int32Array(answered), 0, 1);
+				Atomics.notify(new Int32Array(answered), 0);
+			});
 			const { remote: current, result } = call(helper, cacheDir, {
 				type: "run",
 				job: {
 					...job,
-					interrupt
+					interrupt,
+					lazy: channel ? {
+						flag: answered,
+						port: channel.port2
+					} : void 0
 				}
-			}, output);
+			}, output, channel ? [channel.port2] : [], channel ? serve : void 0);
 			let killed;
 			let stoppedAt = 0;
 			const watch = setInterval(() => {
@@ -29440,8 +32379,29 @@ parentPort.on("message", async message => {
 				};
 			} finally {
 				clearInterval(watch);
+				channel?.port1.close();
 			}
 		})();
+	}
+	async function answer(fs, op, path) {
+		try {
+			if (op === "read") return { value: await fs.read(path) };
+			const entries = [];
+			for (const name of await fs.list(path)) {
+				const stat = await fs.stat(path === "/" ? "/" + name : path + "/" + name);
+				if (stat) entries.push([
+					name,
+					stat.kind,
+					stat.size,
+					stat.mtime,
+					stat.mode
+				]);
+			}
+			return { value: entries };
+		} catch (error) {
+			if (error instanceof FsError) return { code: error.code };
+			throw error;
+		}
 	}
 	// src/bash/internal/commands/python.ts
 	init_Shell();
@@ -29940,7 +32900,7 @@ async def run(request):
 			filename: ctx.resolve(file)
 		};
 	}
-	function pythonCommands(options = {}) {
+	function pythonCommands(options = {}, psh) {
 		const maxBytes = options.maxBytes ?? 67108864;
 		const maxFiles = options.maxFiles ?? 2e4;
 		const mirror = {
@@ -29949,11 +32909,29 @@ async def run(request):
 			adopted: /* @__PURE__ */ new Map()
 		};
 		let local = options.mirror ?? "";
-		const handler = async (ctx) => {
+		const handler = async (context) => {
+			let ctx = context;
 			const mode = parse$1(ctx, ctx.args.slice());
 			if (mode === "help") {
-				ctx.stdout.write(usage(ctx.name) + "\nPython on Pyodide 314.0.7 (CPython for WebAssembly), with pip install through micropip\n");
+				ctx.stdout.write(usage(ctx.name) + "\nPython on RustPython, with Pyodide 314.0.7 (CPython for WebAssembly) for packages and pip install through micropip\n");
 				return 0;
+			}
+			const compiled = mode !== "version" && mode.kind === "pip" ? void 0 : await rustModule(options);
+			if (compiled) {
+				const stdin = ctx.stdin.read();
+				const status = await executeRust(ctx, compiled, {
+					engine: psh === void 0 ? void 0 : await load$1(await psh),
+					fallback: options.remote !== void 0 || canCompile(),
+					maxBytes,
+					stdin,
+					cpuMs: options.cpuMs,
+					stepsPerMs: options.stepsPerMs
+				});
+				if (status !== void 0) return status;
+				ctx = {
+					...ctx,
+					stdin: new Input(stdin)
+				};
 			}
 			if (options.remote) {
 				if (!options.shared) mirror.id ||= options.mirror ?? crypto.randomUUID();
@@ -29986,11 +32964,6 @@ async def run(request):
 			python: handler,
 			python3: handler
 		};
-	}
-	function base64(bytes) {
-		let text = "";
-		for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
-		return btoa(text);
 	}
 	function unbase64(text) {
 		const raw = atob(text);
@@ -30104,10 +33077,12 @@ async def run(request):
 			roots: unique,
 			dirs: [...tree.dirs],
 			timeoutMs: ctx.limits.timeoutMs,
-			mirror: mirror.id
+			mirror: mirror.id,
+			binary: true
 		};
 		const control = {
 			...base,
+			dirs: [],
 			kind: "version",
 			target: "",
 			argv: [],
@@ -30123,13 +33098,28 @@ async def run(request):
 		const upload = async (paths) => {
 			let batch = [];
 			let bytes = 0;
+			let sending;
+			const sync = async (files) => {
+				await sending;
+				sending = send({
+					...control,
+					files,
+					sync: true,
+					stamps: stamped(files)
+				}).then((reply) => {
+					if (reply.mirror !== mirror.id) throw new CommandError(ctx.name + ": this directory holds more than one upload and the Python service does not keep files between runs; run python3 from a smaller directory", 127);
+					for (const [sent] of files) mirror.known.set(sent, tree.files.get(sent));
+				});
+				sending.catch(() => {});
+			};
 			for (const path of paths) {
 				const data = await ctx.fs.read(path).catch(() => null);
 				if (!data) continue;
 				if (data.length > batchBytes) {
+					await sending;
 					for (let offset = 0; offset < data.length; offset += batchBytes) if ((await send({
 						...control,
-						files: [[path, base64(data.subarray(offset, offset + batchBytes))]],
+						files: [[path, data.subarray(offset, offset + batchBytes)]],
 						sync: true,
 						append: offset > 0,
 						...offset + batchBytes >= data.length ? { stamps: [[path, tree.files.get(path)]] } : {}
@@ -30138,19 +33128,14 @@ async def run(request):
 					continue;
 				}
 				if (batch.length && bytes + data.length > batchBytes) {
-					if ((await send({
-						...control,
-						files: batch,
-						sync: true,
-						stamps: stamped(batch)
-					})).mirror !== mirror.id) throw new CommandError(ctx.name + ": this directory holds more than one upload and the Python service does not keep files between runs; run python3 from a smaller directory", 127);
-					for (const [sent] of batch) mirror.known.set(sent, tree.files.get(sent));
+					await sync(batch);
 					batch = [];
 					bytes = 0;
 				}
-				batch.push([path, base64(data)]);
+				batch.push([path, data]);
 				bytes += data.length;
 			}
+			await sending;
 			return batch;
 		};
 		if (!mirror.known.size && tree.files.size) {
@@ -30227,7 +33212,7 @@ async def run(request):
 			for (const [path, data] of changed) {
 				await breathe();
 				await mkdirs(ctx.fs, parentOf(path));
-				await ctx.fs.write(path, unbase64(data));
+				await ctx.fs.write(path, typeof data === "string" ? unbase64(data) : data);
 				const stat = await ctx.fs.stat(path);
 				if (stat && reply.mirror === mirror.id) adopt(path, stat.size + ":" + stat.mtime);
 			}
@@ -30242,7 +33227,7 @@ async def run(request):
 							range: [offset, batchBytes]
 						})).files[0]?.[1];
 						if (data == null) throw new CommandError(ctx.name + ": " + path + " changed while it was copied back", 127);
-						await ctx.fs.write(path, unbase64(data), offset > 0);
+						await ctx.fs.write(path, typeof data === "string" ? unbase64(data) : data, offset > 0);
 						if (offset + batchBytes >= size) break;
 					}
 				} catch (error) {
@@ -30259,6 +33244,147 @@ async def run(request):
 		if (reply.status >= 0) return reply.status;
 		if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
 		throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
+	}
+	function mountable(ctx, mode) {
+		const mounts = [
+			ctx.cwd,
+			"/tmp",
+			...mode.kind === "file" ? [parentOf(mode.filename)] : []
+		];
+		const roots = mounts.filter((root, index) => mounts.indexOf(root) === index && !mounts.some((other) => other !== root && within(root, other)));
+		const free = (root) => root !== "/" && !reserved(root) && !RESERVED.some((prefix) => within(prefix, root));
+		return roots.every(free) ? roots : void 0;
+	}
+	async function erase(fs, path) {
+		if ((await fs.stat(path))?.kind === "directory") for (const name of await fs.list(path)) await erase(fs, join(path, name));
+		await fs.remove(path);
+	}
+	async function apply(fs, changes) {
+		for (const path of [...changes.deleted].sort((a, b) => b.length - a.length)) await erase(fs, path).catch((error) => {
+			if (!(error instanceof FsError)) throw error;
+		});
+		for (const dir of [...changes.dirs].sort()) await mkdirs(fs, dir);
+		for (const [path, data] of changes.files) {
+			await breathe();
+			await mkdirs(fs, parentOf(path));
+			await fs.write(path, data);
+		}
+	}
+	const packagedRust = {};
+	function rustModule(options) {
+		if (options.module === false) return Promise.resolve(void 0);
+		if (options.module) return Promise.resolve(options.module);
+		packagedRust.module ??= (async () => {
+			const fs = globalThis.process?.getBuiltinModule?.("node:fs");
+			const resolve = {}.resolve;
+			if (!fs || !resolve || !canCompile()) return void 0;
+			const bytes = await fs.promises.readFile(new URL(resolve("nanocode-ts/python.wasm")));
+			const compile = WebAssembly.compile;
+			return compile(bytes);
+		})().catch(() => void 0);
+		return packagedRust.module;
+	}
+	const notFound = 127;
+	const refusedStatus = 126;
+	const programs = ["/usr/bin/", "/bin/"];
+	function program(path) {
+		const directory = programs.find((prefix) => path.startsWith(prefix));
+		const name = directory === void 0 ? path : path.slice(directory.length);
+		return name.includes("/") ? path : name;
+	}
+	async function executeRust(ctx, module, options) {
+		const limit = Math.min(options.maxBytes, Math.floor(ctx.limits.maxMemoryBytes / 2));
+		const cpuMs = Math.min(ctx.limits.timeoutMs, options.cpuMs ?? ctx.limits.timeoutMs);
+		const deadline = Date.now() + ctx.limits.timeoutMs;
+		const cache = ctx.fs.sync ? void 0 : layered(ctx.fs, { limits: ctx.limits });
+		const files = ctx.fs.sync ?? cache?.files;
+		if (!files) return void 0;
+		const engine = options.engine;
+		const spawn = engine && ((child) => {
+			const fs = {
+				list: async (path) => files.list(path),
+				mkdir: async (path) => files.mkdir(path),
+				read: async (path) => files.read(path),
+				remove: async (path) => files.remove(path),
+				rename: async (from, to) => files.rename(from, to),
+				stat: async (path) => files.stat(path),
+				sync: files,
+				write: async (path, data, append) => files.write(path, data, append)
+			};
+			const name = program(child.argv[0] ?? "");
+			const ran = runNow(engine, {
+				commandFs: fs,
+				commands: /* @__PURE__ */ new Map(),
+				cwd: child.cwd,
+				env: child.env,
+				fetch: void 0,
+				fs,
+				identity: identity(child.env),
+				kept: void 0,
+				limits: {
+					depth: ctx.limits.maxCallDepth,
+					file: ctx.limits.maxMemoryBytes,
+					fuel: ctx.limits.maxCommands,
+					memory: ctx.limits.maxMemoryBytes,
+					operations: ctx.limits.maxFileOperations,
+					output: ctx.limits.maxOutputLength
+				},
+				machine: void 0,
+				script: [name, ...child.argv.slice(1)].map((word) => "'" + word.replaceAll("'", "'\\''") + "'").join(" ") + (child.merged ? " 2>&1" : ""),
+				shellLimits: ctx.limits,
+				signal: ctx.signal,
+				stdin: child.stdin,
+				strict: false,
+				without: ["curl", "wget"]
+			});
+			if (!ran) return "EAGAIN";
+			if (ran.ended === "cancelled") return "EINTR";
+			if (ran.ended === "exited" && ran.status === notFound && ran.missing.includes(name)) return "ENOENT";
+			if (ran.ended === "exited") return {
+				status: ran.status,
+				stderr: ran.stderr,
+				stdout: ran.stdout
+			};
+			return {
+				status: refusedStatus,
+				stderr: encode(name + ": it ran more than this shell allows\n"),
+				stdout: ran.stdout
+			};
+		});
+		const attempt = () => run(module, {
+			files,
+			request: {
+				argv: ctx.args,
+				cwd: ctx.cwd,
+				depth: ctx.limits.maxCallDepth,
+				env: {
+					...ctx.env,
+					PWD: ctx.cwd
+				},
+				file: limit,
+				memory: ctx.limits.maxMemoryBytes,
+				output: ctx.limits.maxOutputLength,
+				stdin: encode(options.stdin),
+				steps: options.stepsPerMs === void 0 ? Number.MAX_SAFE_INTEGER : Math.ceil(cpuMs * options.stepsPerMs),
+				timeMs: deadline - Date.now()
+			},
+			spawn,
+			stopped: () => ctx.signal.aborted || (cache?.missed() ?? false)
+		});
+		let ran = attempt();
+		while (cache?.missed()) {
+			await cache.fetch();
+			cache.reset();
+			ran = attempt();
+		}
+		if (cache) await apply(ctx.fs, cache.changes());
+		if (ran.kind !== "needs") return report(ctx, ran, {
+			cpuMs,
+			stepsPerMs: options.stepsPerMs
+		});
+		if (options.fallback && ran.missing.every((missing) => missing.package)) return void 0;
+		for (const missing of ran.missing) ctx.stderr.write(missing.text + "\n");
+		return 127;
 	}
 	async function executeThreaded(ctx, mode, stdin, maxBytes, maxFiles, mirror) {
 		if (mode === "version") {
@@ -30279,6 +33405,28 @@ async def run(request):
 		};
 		const path0 = mode.kind === "file" ? parentOf(mode.filename) : mode.kind === "module" ? ctx.cwd : "";
 		const cacheDir = packageCacheDir();
+		const lazy = mountable(ctx, mode);
+		if (lazy) return workerExclusive(async () => {
+			const result = await workerRun(HELPER$1, cacheDir, ctx, {
+				kind: mode.kind,
+				name: ctx.name,
+				target,
+				argv: mode.argv,
+				filename: mode.filename,
+				cwd: ctx.cwd,
+				env,
+				path0,
+				roots: lazy,
+				files: [],
+				stdin: encode(mode.kind === "stdin" ? "" : stdin),
+				lazy: true
+			});
+			await apply(ctx.fs, result.changes);
+			if (result.failure !== void 0) throw result.failure;
+			if (result.status >= 0) return result.status;
+			if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
+			throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
+		});
 		const done = await workerExclusive(async () => {
 			const listing = await scan(ctx.fs, unique, maxBytes, maxFiles, maxBytes);
 			leftOut(ctx, listing.left, listing.leftBytes, listing.partial, "the " + (maxBytes / 1024 / 1024).toFixed(0) + " MiB or " + maxFiles + "-file limit for Python");
@@ -30347,8 +33495,10 @@ async def run(request):
 		const unique = roots.filter((root, index) => roots.indexOf(root) === index && !roots.some((other) => other !== root && within(root, other)));
 		pyodide.FS.chdir("/");
 		for (const path of python.mirrored) unmirror(pyodide.FS, path);
-		python.mirrored = new Set(unique);
-		const snap = await snapshot(ctx.fs, unique, Math.min(maxBytes, Math.floor(ctx.limits.maxMemoryBytes / 2)), maxFiles);
+		const mounts = ctx.fs.sync && mode.kind !== "pip" ? mountable(ctx, mode) : void 0;
+		const lazy = mounts && ctx.fs.sync ? attach(pyodide, ctx.fs.sync, mounts) : void 0;
+		python.mirrored = new Set(lazy ? [] : unique);
+		const snap = await snapshot(ctx.fs, lazy ? [] : unique, Math.min(maxBytes, Math.floor(ctx.limits.maxMemoryBytes / 2)), maxFiles);
 		leftOut(ctx, snap.left, snap.leftBytes, snap.partial, "the " + (Math.min(maxBytes, Math.floor(ctx.limits.maxMemoryBytes / 2)) / 1024 / 1024).toFixed(0) + " MiB or " + maxFiles + "-file limit for Python");
 		mirror(pyodide.FS, snap);
 		pyodide.FS.mkdirTree(ctx.cwd);
@@ -30445,7 +33595,8 @@ async def run(request):
 			stdout.flush();
 			stderr.flush();
 		}
-		await writeBack$1(ctx.fs, snap, collect(pyodide.FS, unique));
+		if (lazy) await apply(ctx.fs, lazy.finish());
+		else await writeBack$1(ctx.fs, snap, collect(pyodide.FS, unique));
 		if (failure !== void 0) throw failure;
 		if (status >= 0) return status;
 		if (ctx.signal.aborted && Date.now() <= deadline) throw new CommandError("interrupted", 130);
@@ -30961,7 +34112,7 @@ async def run(request):
 			let chomped = true;
 			let holdChomped = true;
 			const grow = (text, before) => {
-				if (text.length >>> 20 !== before >>> 20) budget(ctx.limits, 4 * text.length, "sed: the pattern and hold space");
+				if (text.length >>> 20 !== before >>> 20) budget$1(ctx.limits, 4 * text.length, "sed: the pattern and hold space");
 				if (text.length > 4096 && Math.clz32(text.length) < Math.clz32(before)) flatten$1(text);
 				return text;
 			};
@@ -31076,7 +34227,7 @@ async def run(request):
 										changed = true;
 										result += replacement(empty);
 									}
-									result += byte(bytes[j]);
+									result += byte$1(bytes[j]);
 								}
 								last = at + (code >= 55296 && code <= 56319 ? 2 : 1);
 								return true;
@@ -31399,7 +34550,7 @@ async def run(request):
 		if (special !== void 0) {
 			if (count === Infinity && input !== "/dev/null") throw new CommandError("reading " + operands.if + " without count= never ends; add count=N", 1);
 			const want = input === "/dev/null" ? 0 : count * block;
-			budget(ctx.limits, Math.min(want, DEVICE_CHUNK) * 3, "dd");
+			budget$1(ctx.limits, Math.min(want, DEVICE_CHUNK) * 3, "dd");
 			for (let done = 0; done < want; done += DEVICE_CHUNK) await emit(encode(device$1(input, Math.min(DEVICE_CHUNK, want - done))));
 		} else {
 			let data;
@@ -31407,7 +34558,7 @@ async def run(request):
 			else {
 				const stat = await ctx.fs.stat(input);
 				if (!stat) throw new CommandError("failed to open '" + operands.if + "': No such file or directory", 1);
-				budget(ctx.limits, 2 * stat.size, "dd: " + operands.if);
+				budget$1(ctx.limits, 2 * stat.size, "dd: " + operands.if);
 				data = await ctx.fs.read(input);
 			}
 			const end = count === Infinity ? data.length : Math.min(data.length, skip + count * block);
@@ -31673,8 +34824,8 @@ async def run(request):
 			out.push(byte | 128);
 		}
 	}
-	function instrument(bytes) {
-		if (bytes.length < 8) return void 0;
+	function instrument(bytes, pages) {
+		if (bytes.length < 8) throw new Unsupported();
 		let pos = 8;
 		const u32 = () => {
 			let result = 0;
@@ -31707,6 +34858,18 @@ async def run(request):
 			if (u32() & 64) skipLeb();
 			skipLeb();
 		};
+		const memory = () => {
+			const flags = u32();
+			if (flags === 2 || flags > 3) throw new Unsupported();
+			const min = u32();
+			const max = flags & 1 ? u32() : pages;
+			if (min > pages) throw new Refused("the module asks for " + min + " pages of memory, more than the " + pages + " (64 KiB each) of its memory budget");
+			return [
+				flags | 1,
+				...leb(min),
+				...leb(Math.min(max, pages))
+			];
+		};
 		const sections = [];
 		while (pos < bytes.length) {
 			const head = pos;
@@ -31720,10 +34883,9 @@ async def run(request):
 			});
 			pos += size;
 		}
-		if (pos !== bytes.length) return void 0;
+		if (pos !== bytes.length) throw new Unsupported();
 		const find = (id) => sections.find((section) => section.id === id);
 		const code = find(10);
-		if (!code) return void 0;
 		const count = (section) => {
 			if (!section) return 0;
 			pos = section.start;
@@ -31750,11 +34912,8 @@ async def run(request):
 					skipLeb();
 					if (flags & 1) skipLeb();
 					imported.table++;
-				} else if (kind === 2) {
-					const flags = u32();
-					skipLeb();
-					if (flags & 1) skipLeb();
-				} else if (kind === 3) {
+				} else if (kind === 2) memory();
+				else if (kind === 3) {
 					valtype();
 					pos++;
 					imported.global++;
@@ -31763,6 +34922,26 @@ async def run(request):
 					skipLeb();
 				} else throw new Unsupported();
 			}
+		}
+		const exportSection = find(7);
+		if (exportSection) {
+			pos = exportSection.start;
+			const n = u32();
+			for (let i = 0; i < n; i++) {
+				const length = u32();
+				if (new TextDecoder().decode(bytes.subarray(pos, pos + length)) === CHECK_TABLE) throw new Refused("the module exports " + CHECK_TABLE + ", a name the shell reserves");
+				pos += length + 1;
+				skipLeb();
+			}
+		}
+		const memories = [];
+		const memorySection = find(5);
+		if (memorySection) {
+			pos = memorySection.start;
+			const n = u32();
+			memories.push(...leb(n));
+			for (let i = 0; i < n; i++) memories.push(...memory());
+			if (pos !== memorySection.end) throw new Unsupported();
 		}
 		const typeIndex = count(find(1));
 		const tableIndex = imported.table + count(find(4));
@@ -31791,10 +34970,9 @@ async def run(request):
 			...leb(globalIndex),
 			11
 		];
-		pos = code.start;
-		const functions = u32();
+		if (code) pos = code.start;
+		const functions = code ? u32() : 0;
 		const bodies = [];
-		let loops = 0;
 		for (let f = 0; f < functions; f++) {
 			const size = u32();
 			const start = pos;
@@ -31804,8 +34982,8 @@ async def run(request):
 				skipLeb();
 				valtype();
 			}
-			const pieces = [];
-			let copied = start;
+			const pieces = [bytes.subarray(start, pos), new Uint8Array(site)];
+			let copied = pos;
 			while (pos < end) {
 				const op = bytes[pos++];
 				switch (op) {
@@ -31813,7 +34991,6 @@ async def run(request):
 						blocktype();
 						pieces.push(bytes.subarray(copied, pos), new Uint8Array(site));
 						copied = pos;
-						loops++;
 						break;
 					case 2:
 					case 4:
@@ -31922,7 +35099,6 @@ async def run(request):
 			}
 			bodies.push(body);
 		}
-		if (!loops) return void 0;
 		const vector = (section, extra) => {
 			const n = count(section);
 			const rest = section ? bytes.subarray(pos, section.end) : /* @__PURE__ */ new Uint8Array();
@@ -31967,6 +35143,7 @@ async def run(request):
 			at += body.length;
 		}
 		replaced.set(10, codeBytes);
+		if (memorySection) replaced.set(5, new Uint8Array(memories));
 		const order = [
 			1,
 			2,
@@ -32006,9 +35183,9 @@ async def run(request):
 		}
 		return result;
 	}
-	function guarded(bytes) {
+	function guarded(bytes, pages) {
 		try {
-			return instrument(bytes);
+			return instrument(bytes, pages);
 		} catch (error) {
 			if (error instanceof Unsupported || error instanceof RangeError) return void 0;
 			throw error;
@@ -32033,19 +35210,25 @@ async def run(request):
 		return /disallowed|not allowed|code generation|CSP|unsafe-eval/i.test(text);
 	}
 	async function load(bytes, options = {}) {
-		if (!(options.force && options.interpreter) && nativeRefused === void 0) try {
-			const compile = WebAssembly.compile;
-			const patched = guarded(bytes);
-			if (patched) {
-				const module = await compile(patched).catch(() => void 0);
-				helper ??= await compile(HELPER).catch(() => void 0);
-				if (module && helper) return native(module, true);
-			}
-			return native(await compile(bytes.slice()), false);
-		} catch (error) {
-			const text = error instanceof Error ? error.message : String(error);
-			if (!refusedMessage(text)) throw error;
-			nativeRefused = text;
+		if (!(options.force && options.interpreter) && nativeRefused === void 0) {
+			const compiled = await (async () => {
+				try {
+					const compile = WebAssembly.compile;
+					helper ??= await compile(HELPER);
+					const patched = guarded(bytes, Math.min(Math.floor((options.memoryBytes ?? 2 ** 32) / 65536), 65536));
+					const module = patched && await compile(patched).catch(() => void 0);
+					if (module) return native(module, helper);
+					await compile(bytes.slice());
+					return;
+				} catch (error) {
+					const text = error instanceof Error ? error.message : String(error);
+					if (!refusedMessage(text)) throw error;
+					nativeRefused = text;
+					return;
+				}
+			})();
+			if (compiled) return compiled;
+			if (nativeRefused === void 0 && !options.interpreter) throw new Refused("the shell cannot add its deadline checks to this module, and this host has no interpreter (BashOptions.wasm.interpreter, nanocode-ts/interpreter.wasm)");
 		}
 		if (!options.interpreter) throw new Refused("this host cannot compile WebAssembly at runtime (" + nativeRefused + ") and has no interpreter (BashOptions.wasm.interpreter, nanocode-ts/interpreter.wasm)");
 		return interpret(await machine(await options.interpreter), bytes, options);
@@ -32054,7 +35237,7 @@ async def run(request):
 		return kind === "function" || kind === "memory" || kind === "table" || kind === "global" ? kind : "tag";
 	}
 	let helper;
-	function native(module, instrumented) {
+	function native(module, helper) {
 		const imports = WebAssembly.Module.imports(module).map((entry) => ({
 			module: entry.module,
 			name: entry.name,
@@ -32063,7 +35246,7 @@ async def run(request):
 		return {
 			engine: "native",
 			imports,
-			exports: WebAssembly.Module.exports(module).filter((entry) => !instrumented || entry.name !== CHECK_TABLE).map((entry) => ({
+			exports: WebAssembly.Module.exports(module).filter((entry) => entry.name !== CHECK_TABLE).map((entry) => ({
 				name: entry.name,
 				kind: nativeKind(entry.kind)
 			})),
@@ -32083,8 +35266,8 @@ async def run(request):
 				} catch (error) {
 					throw error instanceof WebAssembly.RuntimeError ? new Trap(error.message) : error;
 				}
-				const table = instrumented ? instance.exports[CHECK_TABLE] : void 0;
-				if (table instanceof WebAssembly.Table && helper) {
+				const table = instance.exports[CHECK_TABLE];
+				if (table instanceof WebAssembly.Table) {
 					const tick = new WebAssembly.Instance(helper, { h: { c: () => check?.() } });
 					table.set(0, tick.exports["f"]);
 				}
@@ -32507,7 +35690,7 @@ async def run(request):
 		return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 	}
 	async function compile(bytes, options = {}) {
-		const key = await sha256(bytes) + (options.force ? ":interpreter" : "");
+		const key = await sha256(bytes) + (options.force ? ":interpreter" : "") + ":" + options.memoryBytes;
 		const cached = MODULES.get(key);
 		if (cached && cached.interpreter === options.interpreter) return cached.loaded;
 		let loaded;
@@ -32530,6 +35713,12 @@ async def run(request):
 			interpreter: options.interpreter
 		});
 		return loaded;
+	}
+	function budgeted$1(options, limits) {
+		return {
+			...options,
+			memoryBytes: Math.min(options.memoryBytes ?? limits.maxMemoryBytes, limits.maxMemoryBytes)
+		};
 	}
 	function release(loaded) {
 		for (const entry of MODULES.values()) if (entry.loaded === loaded) return;
@@ -32606,7 +35795,7 @@ async def run(request):
 		if (stat.kind !== "file") throw new CommandError(run.file + ": Is a directory", 126);
 		const bytes = await ctx.fs.read(path);
 		if (!isWasm(bytes)) throw new CommandError(run.file + ": not a WebAssembly module (no \\0asm header)", 126);
-		const module = await compile(bytes, options);
+		const module = await compile(bytes, budgeted$1(options, ctx.limits));
 		const tree = new Tree();
 		tree.limit = Math.min(SNAPSHOT_BYTES, Math.floor(ctx.limits.maxMemoryBytes / 2));
 		for (const arg of [...run.dirs.map((dir) => dir.host), ...run.args]) {
@@ -32720,12 +35909,17 @@ async def run(request):
 			}
 			return E.FBIG;
 		};
+		let owned = 0;
 		const own = (node, capacity) => {
 			if (node.owned && node.data.length >= capacity) return;
-			const data = new Uint8Array(Math.max(capacity, node.owned ? node.data.length * 2 : node.size, 64));
+			const length = Math.max(capacity, node.owned ? node.data.length * 2 : node.size, 64);
+			const total = owned + length - (node.owned ? node.data.length : 0);
+			if (total > ctx.limits.maxMemoryBytes) throw new LimitError("wasm: files grew beyond the " + megabytes(ctx.limits.maxMemoryBytes) + " memory limit");
+			const data = new Uint8Array(length);
 			data.set(node.data.subarray(0, Math.min(node.size, data.length)));
 			node.data = data;
 			node.owned = true;
+			owned = total;
 		};
 		const writeFile = (node, position, chunk) => {
 			const end = position + chunk.length;
@@ -33008,7 +36202,8 @@ async def run(request):
 				const handle = file(fd);
 				if (typeof handle === "number") return handle === E.ISDIR ? E.BADF : handle;
 				if (!(handle.rights & WRITE)) return E.BADF;
-				const length = Number(size);
+				const length = Number(BigInt.asUintN(64, size));
+				if (length > ctx.limits.maxBufferLength * 4) return E.FBIG;
 				own(handle.node, length);
 				if (length > handle.node.size) handle.node.data.fill(0, handle.node.size, length);
 				handle.node.size = length;
@@ -33026,7 +36221,9 @@ async def run(request):
 			fd_allocate: (fd, offset, length) => {
 				const handle = file(fd);
 				if (typeof handle === "number") return handle === E.ISDIR ? E.BADF : handle;
-				const end = Number(offset + length);
+				if (!(handle.rights & WRITE)) return E.BADF;
+				const end = Number(BigInt.asUintN(64, offset) + BigInt.asUintN(64, length));
+				if (end > ctx.limits.maxBufferLength * 4) return E.FBIG;
 				if (end > handle.node.size) {
 					own(handle.node, end);
 					handle.node.data.fill(0, handle.node.size, end);
@@ -33307,7 +36504,7 @@ async def run(request):
 		const loaded = async (request) => {
 			const found = await source(request);
 			if (!isWasm(found.bytes)) throw new Error("not a WebAssembly module (no \\0asm header)");
-			return compile(found.bytes, options).catch((error) => {
+			return compile(found.bytes, budgeted$1(options, shell.limits)).catch((error) => {
 				throw new Error(error instanceof Error ? error.message : String(error));
 			});
 		};
@@ -34706,6 +37903,7 @@ async def run(request):
 	init_FileSystem();
 	init_Fs();
 	init_Shell();
+	const idle = new FinalizationRegistry(drop);
 	const workspaceTimeoutMs = 6e5;
 	const defaultLimits = {
 		maxCommands: 1e6,
@@ -34761,10 +37959,10 @@ async def run(request):
 			...builtinCommands,
 			...options.github ? gitCommands(options.github) : {},
 			...options.wasm ? wasmCommands(options.wasm) : {},
-			...options.python ? pythonCommands(options.python) : {},
+			...options.python ? pythonCommands(options.python, options.psh) : {},
 			...options.commands
 		}));
-		if (!options.python?.remote && !(options.webassembly ?? compiles())) {
+		if (!options.python?.remote && !options.python?.module && !(options.webassembly ?? compiles())) {
 			for (const name of [
 				"python",
 				"python3",
@@ -34789,8 +37987,8 @@ async def run(request):
 			env,
 			async exec(script, execOptions = {}) {
 				const call = ++calls;
-				const command = commandOf(script);
-				const started = Date.now();
+				const command = options.observe ? commandOf(script) : "other";
+				const started = options.observe ? Date.now() : 0;
 				emit({
 					phase: "started",
 					call,
@@ -34806,8 +38004,44 @@ async def run(request):
 				const onAbort = () => controller.abort("execution aborted");
 				if (execOptions.signal?.aborted) onAbort();
 				execOptions.signal?.addEventListener("abort", onAbort, { once: true });
-				const state = new State();
 				const directory = resolvePath(cwd, execOptions.cwd ?? cwd);
+				const engine = await options.psh;
+				if (engine) {
+					const outcome = await engineRun(engine, {
+						controller,
+						directory,
+						execOptions,
+						script,
+						timeoutMs
+					}).finally(() => {
+						clearTimeout(timer);
+						execOptions.signal?.removeEventListener("abort", onAbort);
+					});
+					const category = (() => {
+						if (outcome.exitCode === 0) return "none";
+						if (outcome.category === "exception") return "exception";
+						if (execOptions.signal?.aborted) return execOptions.signal.reason?.name === "TimeoutError" ? "timeout" : "cancelled";
+						if (timedOut) return "timeout";
+						return outcome.category;
+					})();
+					if (options.observe) emit({
+						phase: "finished",
+						call,
+						command,
+						status: outcome.exitCode === 0 ? "success" : "error",
+						category,
+						exitCode: outcome.exitCode,
+						durationMs: Date.now() - started,
+						outputTruncated: outcome.truncated
+					});
+					return {
+						stdout: outcome.stdout,
+						stderr: outcome.stderr,
+						exitCode: outcome.exitCode,
+						truncated: outcome.truncated
+					};
+				}
+				const state = new State();
 				state.cwd = directory;
 				for (const [name, value] of Object.entries({
 					...env,
@@ -34866,7 +38100,7 @@ async def run(request):
 				let exitCode;
 				let category;
 				try {
-					exitCode = await run(runner, script, {
+					exitCode = await run$2(runner, script, {
 						stdin: machine && execOptions.stdin === void 0 ? Input.machine() : new Input(execOptions.stdin),
 						stdout,
 						stderr
@@ -34949,6 +38183,115 @@ async def run(request):
 			}
 		};
 		const wasm = wasmHost(shell, options.wasm);
+		let kept;
+		let spare;
+		const engineRun = async (engine, request) => {
+			const lent = spare;
+			spare = void 0;
+			const budget = lent ? lent.budget : {
+				used: 0,
+				refused: false
+			};
+			budget.used = 0;
+			budget.refused = false;
+			const commandFs = lent ? lent.fs : budgeted(fs, limits.maxFileOperations, budget);
+			const ran = await (async () => {
+				try {
+					const settings = {
+						commandFs,
+						commands,
+						cwd: request.directory,
+						env: {
+							...env,
+							...request.execOptions.env,
+							PWD: request.directory
+						},
+						fetch: options.fetch,
+						fs,
+						kept: void 0,
+						identity: identity(env),
+						limits: {
+							depth: limits.maxCallDepth,
+							file: limits.maxMemoryBytes,
+							fuel: limits.maxCommands,
+							memory: limits.maxMemoryBytes,
+							operations: limits.maxFileOperations,
+							output: limits.maxOutputLength
+						},
+						machine,
+						script: request.script,
+						shellLimits: {
+							...limits,
+							timeoutMs: request.timeoutMs
+						},
+						signal: request.controller.signal,
+						stdin: request.execOptions.stdin === void 0 ? void 0 : encode(request.execOptions.stdin),
+						strict: options.fallback === true || machine !== void 0,
+						without: [
+							"curl",
+							"wget",
+							...Object.keys(options.commands ?? {})
+						]
+					};
+					const entries = Object.entries(settings.env);
+					if (!(kept !== void 0 && kept.entries.length === entries.length && entries.every((entry, index) => entry[0] === kept.entries[index][0] && entry[1] === kept.entries[index][1]))) {
+						if (kept) drop(kept.held);
+						kept = {
+							entries,
+							held: keep(settings)
+						};
+						idle.register(shell, kept.held);
+					}
+					settings.kept = kept.held;
+					return await run$1(engine, settings);
+				} catch (error) {
+					return error instanceof Error ? error : new Error(String(error));
+				}
+			})();
+			const refused = budget.refused;
+			spare = {
+				budget,
+				fs: commandFs
+			};
+			if (ran instanceof Error) return {
+				category: "exception",
+				exitCode: 1,
+				stderr: "/bin/bash: " + ran.message + "\n",
+				stdout: "",
+				truncated: false
+			};
+			const stdout = display(decode(ran.stdout));
+			const stderr = ran.missing.reduce((all, name) => {
+				const hint = missing$1(name);
+				const told = ": " + name + ": command not found\n";
+				return hint ? all.replace(told, told.slice(0, -1) + hint + "\n") : all;
+			}, display(decode(ran.stderr)));
+			const outcome = (extra, exitCode, category) => ({
+				category,
+				exitCode,
+				stderr: stderr + extra,
+				stdout,
+				truncated: ran.truncated
+			});
+			switch (ran.ended) {
+				case "exited": return outcome("", ran.status, ran.status === 2 && /^\/bin\/bash: -c: line \d+: syntax error/m.test(stderr) ? "syntax" : ran.status === 127 ? "command_not_found" : "command_exit");
+				case "memory": return outcome("/bin/bash: the script needs more than " + megabytes(limits.maxMemoryBytes) + ", this host's memory budget\n", 126, "resource_limit");
+				case "fuel": return outcome("/bin/bash: too many commands (limit " + limits.maxCommands + ")\n", 126, "resource_limit");
+				case "operations": return outcome("/bin/bash: too many file operations (limit " + limits.maxFileOperations + "); search a narrower path\n", 126, "search_admission");
+				case "missing": {
+					const name = ran.missing.at(-1) ?? "";
+					const told = ": " + name + ": command not found";
+					return outcome(stderr.includes(told) ? "" : "/bin/bash" + told + missing$1(name) + "\n", 127, "command_not_found");
+				}
+				case "unanswered": return outcome("/bin/bash: " + unanswered(ran.unanswered) + "\n", 127, "command_not_found");
+				case "cancelled": {
+					if (ran.halted !== void 0) return outcome("/bin/bash: " + ran.halted + "\n", 127, "command_not_found");
+					if (refused) return outcome("/bin/bash: too many file operations (limit " + limits.maxFileOperations + "); search a narrower path\n", 126, "search_admission");
+					const reason = request.controller.signal.reason;
+					return outcome("/bin/bash: " + (typeof reason === "string" ? reason : "execution aborted") + "\n", 124, "cancelled");
+				}
+			}
+		};
 		if (options.fs && options.files) for (const [path, content] of Object.entries(options.files)) await shell.writeFile(path, content);
 		if (!machine) for (const dir of [
 			cwd,
@@ -34956,6 +38299,22 @@ async def run(request):
 			"/tmp"
 		]) await mkdirs(fs, dir);
 		return shell;
+	}
+	function budgetedSync(sync, charge) {
+		return {
+			list: (path) => (charge(), sync.list(path)),
+			mkdir: (path) => (charge(), sync.mkdir(path)),
+			read: (path) => (charge(), devices.has(path) ? device(path) : sync.read(path)),
+			remove: (path) => (charge(), sync.remove(path)),
+			rename: (from, to) => (charge(), sync.rename(from, to)),
+			stat: (path) => (charge(), devices.has(path) ? {
+				kind: "file",
+				size: 0,
+				mtime: 0,
+				mode: 438
+			} : sync.stat(path)),
+			write: (path, data, append) => (charge(), devices.has(path) ? void 0 : sync.write(path, data, append))
+		};
 	}
 	function budgeted(fs, limit, budget) {
 		const charge = () => {
@@ -34976,6 +38335,7 @@ async def run(request):
 			mkdir: (path) => (charge(), fs.mkdir(path)),
 			remove: (path) => (charge(), fs.remove(path)),
 			rename: (from, to) => (charge(), fs.rename(from, to)),
+			...fs.sync ? { sync: budgetedSync(fs.sync, charge) } : {},
 			...fs.chmod ? { chmod: (path, mode) => (charge(), fs.chmod(path, mode)) } : {},
 			...fs.utimes ? { utimes: (path, mtime) => (charge(), fs.utimes(path, mtime)) } : {},
 			...fs.symlink ? { symlink: (target, path) => (charge(), fs.symlink(target, path)) } : {},
