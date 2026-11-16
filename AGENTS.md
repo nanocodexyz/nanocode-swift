@@ -16,7 +16,7 @@ These principles come from nanocodexyz/nanocode's `AGENTS.md` and apply to every
 - Inference, subagents and durability live in the brain; Code Mode runs on the user's machine. Never silently replay dispatched work: report uncertain outcomes.
 - Validate by building the XCFramework, `swift build`, the example apps with `xcodebuild` and runs of `Examples/Console`, and back performance changes with reproducible before/after measurements, keeping cold builds, incremental builds and runtime performance separate.
 - Check behavior with harnesses in ignored `output/`. Keep every artifact there; never commit them, credentials or personal data.
-- Work on master in the main checkout, commit only your own changes and push each one; no pull requests. There is no CI: build, release and deploy by hand. Use subagents only when asked.
+- Work on master in the main checkout, commit only your own changes and push each one; no pull requests. CI (`.github/workflows/ci.yml`) builds every push and pull request on macOS: the package with the released FFI and without it, the Console's offline `bash` mode, the C and Python examples, the demo for macOS and the iOS simulator, and `cargo check` of the crate on Linux; release and deploy by hand. Use subagents only when asked.
 - This file holds principles only and rarely changes. DECISIONS.md is the growing log: add what each change establishes and why, with the commands, dates and measurements behind it.
 
 ## Build
