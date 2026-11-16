@@ -66,6 +66,8 @@ public struct ToolCellView: View {
       } else if depth == 0, cell.status == .running, !cell.output.isEmpty {
         Text(cell.output.split(separator: "\n").suffix(3).joined(separator: "\n"))
           .font(.mono(theme.codeSize - 1)).foregroundStyle(theme.muted).lineLimit(3)
+      } else if depth == 0, !cell.images.isEmpty {
+        ForEach(cell.images, id: \.self) { image in RemoteImage(image, maxHeight: 260) }
       }
     }
     .padding(.vertical, depth == 0 ? 8 : 2)

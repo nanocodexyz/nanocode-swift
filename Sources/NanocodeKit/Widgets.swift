@@ -573,6 +573,7 @@ public final class ImageNode: Node {
     self.cover = cover
     self.resolver = resolver
     self.source = source
+    load()
   }
 
   func load() {

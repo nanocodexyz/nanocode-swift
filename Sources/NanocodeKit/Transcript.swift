@@ -763,7 +763,7 @@ final class CellNode: Stack {
     if !output.gone {
       output.update(outputText, language: cell.outputLanguage, part: unsuccessful ? .error : .output, limit: open ? nil : 10, tail: tail)
     }
-    images.gone = !(shown && !cell.images.isEmpty)
+    images.gone = !((shown || collapsed && !nested) && !cell.images.isEmpty)
     if !images.gone, images.items.count != cell.images.count {
       images.set(cell.images.map { ImageNode($0, maxHeight: 260, resolver: resolver) })
     } else if !images.gone, let resolver {
