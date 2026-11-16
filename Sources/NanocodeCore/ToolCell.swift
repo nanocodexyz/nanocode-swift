@@ -278,13 +278,6 @@ enum Describe {
     return ""
   }
 
-  static func isImage(_ url: String) -> Bool {
-    let trimmed = url.trimmingCharacters(in: .whitespaces).lowercased()
-    if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") { return true }
-    for kind in ["png", "jpeg", "jpg", "gif", "webp", "avif", "bmp"] where trimmed.hasPrefix("data:image/\(kind)") { return true }
-    return false
-  }
-
   static func images(_ result: JSON?, _ found: inout [String]) {
     guard let result else { return }
     if let array = result.array {
@@ -303,7 +296,7 @@ enum Describe {
     } else if type == "image", let source = object["source"], source["type"]?.string == "url" {
       url = source["url"]?.string
     }
-    if let url = url?.trimmingCharacters(in: .whitespaces), isImage(url), !found.contains(url) { found.append(url) }
+    if let url = url?.trimmingCharacters(in: .whitespaces), ImageSource.isImage(url), !found.contains(url) { found.append(url) }
     for key in ["content", "content_blocks", "Content", "output"] {
       if let nested = object[key], nested.array != nil { images(nested, &found) }
     }

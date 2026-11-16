@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Nanocode
 
@@ -73,6 +74,34 @@ func show(_ chat: Chat, from printed: inout Int) {
   printed = chat.entries.count
 }
 
+@MainActor
+func images(_ chat: Chat) -> [String] {
+  var found: [String] = []
+  func walk(_ cell: ToolCell) {
+    found += cell.images.filter { !found.contains($0) }
+    cell.children.forEach(walk)
+  }
+  for entry in chat.entries {
+    if let tool = entry.tool { walk(tool) }
+  }
+  return found
+}
+
+func save(_ sources: [String], _ resolver: any ImageResolver, prefix: String) async {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent("nanocode-console-remote/images", isDirectory: true)
+  try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  for (index, source) in sources.enumerated() {
+    let label = source.hasPrefix("data:") ? "\(source.prefix(while: { $0 != "," })) (\(source.count) chars)" : source
+    do {
+      let data = try await resolver.imageData(source)
+      let file = directory.appendingPathComponent("\(prefix)-\(index).\(DataURL.mime(data).split(separator: "/").last ?? "png")")
+      try data.write(to: file)
+      print("[image] \(label) \(data.count) bytes sha256 \(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()) -> \(file.path)")
+    } catch {
+      print("[image] \(label) failed: \(error.localizedDescription)")
+    }
+  }
+}
 
 if arguments.first == "plan" {
   let values = Array(arguments.dropFirst())
@@ -133,6 +162,9 @@ if arguments.first == "remote-resume" {
     quiet = !pending && printed > 0 && printed == before ? quiet + 1 : 0
     if quiet >= 5 { break }
   }
+  if let resolver = await chat.backend as? any ImageResolver {
+    await save(await images(chat), resolver, prefix: record.id)
+  }
   print("[record] open=\(store.conversations().first { $0.id == record.id }?.open ?? "none")")
   exit(0)
 }
@@ -172,6 +204,7 @@ if arguments.first == "remote" {
       if !pending { break }
     }
   }
+  await save(await images(chat), session, prefix: session.id)
   print("[record] session=\(session.record.session ?? "") cursor=\(session.record.cursor ?? "") open=\(session.record.open ?? "none") title=\(session.record.title ?? "")")
   let reopened = RemoteSession(server: server, store: store, conversation: store.conversations().first { $0.id == session.id }!)
   let restored = await Chat(revealMs: 0)

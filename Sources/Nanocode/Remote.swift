@@ -864,3 +864,45 @@ public final class RemoteSession: ChatBackend, @unchecked Sendable {
     return await reconnect(next.requestID)
   }
 }
+extension RemoteSession: ImageResolver {
+  private static let blobs = OSAllocatedUnfairLock<[String: Data]>(initialState: [:])
+
+  public func imageData(_ source: String) async throws -> Data {
+    if let data = DataURL.decode(source) { return data }
+    let request: URLRequest
+    if let blob = ImageSource.blob(source) {
+      if let cached = Self.blobs.withLock({ $0[blob.key] }) { return cached }
+      guard server.kind == .cloudflare else { throw NanocodeError("\(server.kind.rawValue) sessions serve no blobs") }
+      var get = URLRequest(url: cloudflareURL("blobs/" + (blob.key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? blob.key)))
+      headers(&get)
+      request = get
+    } else if let path = ImageSource.workspacePath(source) {
+      switch server.kind {
+      case .cloudflare:
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+        let encoded = path.split(separator: "/").map { "/" + ($0.addingPercentEncoding(withAllowedCharacters: allowed) ?? String($0)) }.joined()
+        var get = URLRequest(url: cloudflareURL("files" + encoded))
+        headers(&get)
+        request = get
+      case .vercel:
+        guard let session = record.session else { throw NanocodeError("this conversation has no session yet") }
+        var get = URLRequest(url: vercelURL([URLQueryItem(name: "sessionId", value: session), URLQueryItem(name: "file", value: path)]))
+        headers(&get)
+        request = get
+      }
+    } else if let url = URL(string: source), url.scheme == "https" || url.scheme == "http" {
+      request = URLRequest(url: url)
+    } else {
+      throw NanocodeError("not an image source: \(source.prefix(80))")
+    }
+    let (data, response) = try await http.data(for: request)
+    guard (200..<300).contains((response as? HTTPURLResponse)?.statusCode ?? 0) else { throw NanocodeError(failure(data, response)) }
+    if let blob = ImageSource.blob(source) {
+      Self.blobs.withLock { cache in
+        if cache.count >= 64 { cache.removeAll() }
+        cache[blob.key] = data
+      }
+    }
+    return data
+  }
+}
