@@ -563,32 +563,43 @@ public final class ImageNode: Node {
   public var source = "" { didSet { if source != oldValue { load() } } }
   public var maxHeight: CGFloat = 320 { didSet { invalidate() } }
   public var cover: CGSize? { didSet { invalidate() } }
+  public var resolver: (any ImageResolver)? { didSet { if image == nil, resolver != nil { load() } } }
   private var image: KitImage?
   private var task: Task<Void, Never>?
 
-  public convenience init(_ source: String, maxHeight: CGFloat = 320, cover: CGSize? = nil) {
+  public convenience init(_ source: String, maxHeight: CGFloat = 320, cover: CGSize? = nil, resolver: (any ImageResolver)? = nil) {
     self.init(frame: .zero)
     self.maxHeight = maxHeight
     self.cover = cover
+    self.resolver = resolver
     self.source = source
-    load()
   }
 
   func load() {
     task?.cancel()
     image = nil
+    let source = source
     if let data = DataURL.decode(source) {
       image = KitImage(data: data)
-    } else if source.hasPrefix("/") {
+    } else if source.hasPrefix("/"), FileManager.default.fileExists(atPath: source) {
       image = KitImage(contentsOfFile: source)
+    } else if let resolver, !source.isEmpty {
+      task = Task { [weak self] in
+        guard let data = try? await resolver.imageData(source), !Task.isCancelled else { return }
+        self?.show(data)
+      }
     } else if let url = URL(string: source), url.scheme == "https" || url.scheme == "http" {
       task = Task { [weak self] in
         guard let (data, _) = try? await URLSession.shared.data(from: url), !Task.isCancelled else { return }
-        self?.image = KitImage(data: data)
-        self?.invalidate()
-        self?.redraw()
+        self?.show(data)
       }
     }
+    invalidate()
+    redraw()
+  }
+
+  private func show(_ data: Data) {
+    image = KitImage(data: data)
     invalidate()
     redraw()
   }

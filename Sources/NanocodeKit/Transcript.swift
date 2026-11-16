@@ -77,6 +77,7 @@ struct TurnState {
   var pending: Bool
   var busy: Bool
   var phase: ActivityPhase
+  var images: (any ImageResolver)?
 }
 
 final class LogNode: Stack {
@@ -104,11 +105,13 @@ final class LogNode: Stack {
       : Insets(top: wide ? 16 : 8, left: wide ? 24 : 16, bottom: wide ? 40 : 32, right: wide ? 24 : 16)
     let list = chat.turns
     let activity = chat.activity
+    let resolver = chat.backend as? any ImageResolver ?? chat.workspace.map { WorkspaceImages(directory: $0) as any ImageResolver }
     var nodes: [Node] = []
     var kept: [String: TurnNode] = [:]
     for (index, turn) in list.enumerated() {
       let node = turns[turn.id] ?? TurnNode(skin: skin)
-      node.update(turn, TurnState(wide: wide, last: index == list.count - 1, pending: chat.pending, busy: activity.busy || chat.pending, phase: activity.phase))
+      node.update(turn, TurnState(wide: wide, last: index == list.count - 1, pending: chat.pending, busy: activity.busy || chat.pending,
+                                  phase: activity.phase, images: resolver))
       kept[turn.id] = node
       nodes.append(node)
     }
@@ -158,6 +161,7 @@ final class TurnNode: Stack {
   var blocks: [String: (String, Node)] = [:]
   var promptText: String?
   var promptImages: [String] = []
+  var resolver: (any ImageResolver)?
 
   init(skin: Skin) {
     self.skin = skin
@@ -199,6 +203,7 @@ final class TurnNode: Stack {
   required init?(coder: NSCoder) { fatalError("created in code") }
 
   func update(_ turn: Turn, _ state: TurnState) {
+    resolver = state.images
     row.ratio = skin.claude || !state.wide ? 0.85 : 0.7
     if let entry = turn.prompt {
       if entry.text != promptText {
@@ -208,7 +213,7 @@ final class TurnNode: Stack {
       }
       if entry.images != promptImages {
         promptImages = entry.images
-        images.set(entry.images.map { ImageNode($0, cover: CGSize(width: 36, height: 36)).rounded(8) })
+        images.set(entry.images.map { ImageNode($0, cover: CGSize(width: 36, height: 36), resolver: resolver).rounded(8) })
         images.gone = entry.images.isEmpty
       }
       row.gone = false
@@ -252,6 +257,8 @@ final class TurnNode: Stack {
   func fill(_ node: Node, _ block: CloneBlock) {
     switch block {
     case .tools(_, let cells, let live):
+      (node as? GPTTools)?.resolver = resolver
+      (node as? ClaudeTools)?.resolver = resolver
       (node as? GPTTools)?.update(cells, live: live)
       (node as? ClaudeTools)?.update(cells, live: live)
     case .block(let entry):
@@ -428,6 +435,7 @@ final class GPTTools: Stack {
   var cells: [String: CellNode] = [:]
   var open: Bool?
   var current: ([ToolCell], Bool) = ([], false)
+  var resolver: (any ImageResolver)?
 
   init(skin: Skin) {
     self.skin = skin
@@ -482,6 +490,7 @@ final class GPTTools: Stack {
     var kept: [String: CellNode] = [:]
     body.set(list.map { cell in
       let node = cells[cell.callID] ?? CellNode(skin: skin)
+      node.resolver = resolver
       node.update(cell, live: live)
       kept[cell.callID] = node
       return node
@@ -493,6 +502,7 @@ final class GPTTools: Stack {
 final class ClaudeTools: Stack {
   let skin: Skin
   var cells: [String: CellNode] = [:]
+  var resolver: (any ImageResolver)?
 
   init(skin: Skin) {
     self.skin = skin
@@ -511,6 +521,7 @@ final class ClaudeTools: Stack {
     var kept: [String: CellNode] = [:]
     set(list.enumerated().map { index, cell in
       let node = cells[cell.callID] ?? CellNode(skin: skin, collapsed: true)
+      node.resolver = resolver
       node.update(cell, live: live)
       node.rules = index > 0 ? [(.top, skin.border, skin.hairline)] : []
       kept[cell.callID] = node
@@ -630,6 +641,7 @@ final class CellNode: Stack {
   var rail: Node?
   let images = Flow()
   var childNodes: [String: CellNode] = [:]
+  var resolver: (any ImageResolver)?
   var cell: ToolCell?
   var live = false
   var open = false
@@ -739,6 +751,7 @@ final class CellNode: Stack {
       var kept: [String: CellNode] = [:]
       children.set(cell.children.enumerated().map { index, child in
         let node = childNodes[child.callID] ?? CellNode(skin: skin, nested: true, collapsed: collapsed)
+        node.resolver = resolver
         node.update(child, live: live)
         if skin.claude { node.rules = index > 0 ? [(.top, skin.border, skin.hairline)] : [] }
         kept[child.callID] = node
@@ -752,7 +765,9 @@ final class CellNode: Stack {
     }
     images.gone = !(shown && !cell.images.isEmpty)
     if !images.gone, images.items.count != cell.images.count {
-      images.set(cell.images.map { ImageNode($0, maxHeight: 260) })
+      images.set(cell.images.map { ImageNode($0, maxHeight: 260, resolver: resolver) })
+    } else if !images.gone, let resolver {
+      for case let node as ImageNode in images.items where node.resolver == nil { node.resolver = resolver }
     }
   }
 
