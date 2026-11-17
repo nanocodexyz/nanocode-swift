@@ -20,12 +20,12 @@ if arguments.first == "wallet" {
   Task {
     for await event in events {
       if case .walletPrompt(let prompt) = event {
-        print("[wallet] approve \(prompt.userCode) at \(prompt.verificationURIComplete ?? prompt.verificationURI)")
+        print("[tempo-id] approve \(prompt.userCode) at \(prompt.verificationURIComplete ?? prompt.verificationURI)")
       }
     }
   }
-  let record = try await Wallet(runtime: runtime).connect(name: "nanocode console", website: "https://nanocode.xyz")
-  print("[wallet] connected \(record.account) with key \(record.keyAddress)")
+  let record = try await Wallet(runtime: runtime).connect(name: "nanocode console")
+  print("[tempo-id] signed in \(record.account) with key \(record.keyAddress)")
   exit(0)
 }
 if arguments.first == "hand" || arguments.first == "runner" {
@@ -236,8 +236,11 @@ let authentication: Authentication
 if let key = ProcessInfo.processInfo.environment[provider == .claude ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"] {
   authentication = .apiKey(key)
 } else {
-  let status = try await wallet.useTempoCLI()
-  print("[wallet] \(status.account ?? "none") via \(status.source ?? "")")
+  guard let status = await wallet.restore() else {
+    print("No API key is set and no Tempo account is signed in: run `Console wallet` to sign in with Tempo ID.")
+    exit(1)
+  }
+  print("[tempo-id] \(status.account ?? "none")")
   authentication = .tempo
 }
 let clock = HostTool(

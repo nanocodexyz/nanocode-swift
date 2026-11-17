@@ -150,7 +150,6 @@ pub enum Command {
     },
     WalletConnect(wallet::Meta),
     WalletUse(wallet::Record),
-    WalletCli {},
     WalletForget {},
     Payments {},
     FundingUrl {
@@ -301,7 +300,6 @@ pub async fn execute(host: &Arc<Host>, command: Command) -> Result<Value, String
         }
         Command::WalletConnect(meta) => wallet::connect(host, meta).await,
         Command::WalletUse(record) => wallet::install(&host.payments, &record),
-        Command::WalletCli {} => wallet::install_cli(&host.payments),
         Command::WalletForget {} => {
             host.payments.forget();
             Ok(host.payments.status())

@@ -374,7 +374,7 @@ public final class NanocodeRuntime: @unchecked Sendable {
   private let context: UnsafeMutableRawPointer
   public let dataDirectory: URL
 
-  public init(dataDirectory: URL, tempoHome: URL? = nil) throws {
+  public init(dataDirectory: URL) throws {
     self.dataDirectory = dataDirectory
     try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
     router = Router()
@@ -382,8 +382,7 @@ public final class NanocodeRuntime: @unchecked Sendable {
     guard let shell = Bundle.module.url(forResource: "shell", withExtension: nil) else {
       throw NanocodeError("the shell's JavaScript is missing from the package")
     }
-    var config: [String: JSON] = ["data_dir": .string(dataDirectory.path), "shell": .string(shell.path)]
-    if let tempoHome { config["tempo_home"] = .string(tempoHome.path) }
+    let config: [String: JSON] = ["data_dir": .string(dataDirectory.path), "shell": .string(shell.path)]
     let data = JSON.object(config).data()
     let handle = data.withUnsafeBytes { buffer in
       nanocode_start(buffer.bindMemory(to: UInt8.self).baseAddress, buffer.count, callback, context)

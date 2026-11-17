@@ -28,7 +28,18 @@ final class Delegate: NSObject, NSApplicationDelegate {
       let wallet = WalletMonitor(runtime: runtime, name: "nanocode AppKit")
       self.wallet = wallet
       await wallet.restore()
-      if !wallet.connected { await wallet.useTempoCLI() }
+      if !wallet.connected {
+        let events = runtime.events
+        let approval = Task {
+          for await event in events {
+            if case .walletPrompt(let prompt) = event {
+              NSWorkspace.shared.open(prompt.verificationURIComplete ?? prompt.verificationURI)
+            }
+          }
+        }
+        await wallet.connect()
+        approval.cancel()
+      }
       let session = try await runtime.open(SessionConfiguration(provider: .claude, model: "claude-haiku-5-5"))
       await chat.attach(session)
     } catch {

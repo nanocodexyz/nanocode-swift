@@ -12,12 +12,10 @@ public final class WalletMonitor {
   @ObservationIgnored public let wallet: Wallet
   @ObservationIgnored private var listener: Task<Void, Never>?
   @ObservationIgnored public var name: String
-  @ObservationIgnored public var website: String?
 
-  public init(runtime: NanocodeRuntime, name: String = "nanocode", website: String? = "https://nanocode.xyz") {
+  public init(runtime: NanocodeRuntime, name: String = "nanocode") {
     wallet = Wallet(runtime: runtime)
     self.name = name
-    self.website = website
     let events = runtime.events
     listener = Task { @MainActor [weak self] in
       for await event in events {
@@ -47,16 +45,11 @@ public final class WalletMonitor {
       prompt = nil
     }
     do {
-      _ = try await wallet.connect(name: name, website: website)
+      _ = try await wallet.connect(name: name)
       status = try await wallet.status()
     } catch {
       self.error = error.localizedDescription
     }
-  }
-
-  public func useTempoCLI() async {
-    error = nil
-    do { status = try await wallet.useTempoCLI() } catch { self.error = error.localizedDescription }
   }
 
   public func disconnect() async {

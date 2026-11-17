@@ -148,10 +148,10 @@ final class DemoController: KitViewController {
       return ("\(name) plan", model.plans.isSignedIn(model.style.provider) ? "Signed in" : "Not signed in")
     case .tempo:
       guard let status = model.wallet.status, status.connected, let account = status.account else {
-        return ("Tempo Wallet", model.wallet.connecting ? "Connecting…" : "Not connected")
+        return ("Tempo ID", model.wallet.connecting ? "Signing in…" : "Not signed in")
       }
       let short = account.count > 12 ? "\(account.prefix(6))…\(account.suffix(4))" : account
-      return ("Tempo Wallet", "\(short) · \(status.total) MACH spent")
+      return ("Tempo ID", "\(short) · \(status.total) MACH spent")
     }
   }
 
