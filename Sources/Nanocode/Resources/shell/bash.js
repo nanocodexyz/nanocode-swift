@@ -20,7 +20,28 @@ var NanocodeBash = (function(exports) {
 		return target;
 	};
 	// src/bash/FileSystem.ts
-	function normalize(path) {
+	function normalized(path) {
+		const length = path.length;
+		if (length === 0 || path.charCodeAt(0) !== 47) return false;
+		if (length === 1) return true;
+		if (path.charCodeAt(length - 1) === 47) return false;
+		for (let i = 0; i < length; i++) {
+			if (path.charCodeAt(i) !== 47) continue;
+			const next = path.charCodeAt(i + 1);
+			if (next === 47) return false;
+			if (next === 46) {
+				const after = path.charCodeAt(i + 2);
+				if (after !== after || after === 47) return false;
+				if (after === 46) {
+					const third = path.charCodeAt(i + 3);
+					if (third !== third || third === 47) return false;
+				}
+			}
+		}
+		return true;
+	}
+	function normalize$1(path) {
+		if (normalized(path)) return path;
 		const parts = [];
 		for (const part of path.split("/")) {
 			if (part === "" || part === ".") continue;
@@ -30,7 +51,7 @@ var NanocodeBash = (function(exports) {
 		return "/" + parts.join("/");
 	}
 	function resolvePath(cwd, path) {
-		return normalize(path.startsWith("/") ? path : cwd + "/" + path);
+		return normalize$1(path.startsWith("/") ? path : cwd + "/" + path);
 	}
 	var messages, FsError;
 	var init_FileSystem = __esmMin(() => {
@@ -115,7 +136,7 @@ var NanocodeBash = (function(exports) {
 		const b = value & 255;
 		return String.fromCharCode(b < 128 ? b : 56320 + b);
 	}
-	function plain(text) {
+	function plain$1(text) {
 		return codec === void 0 && wellFormed(text);
 	}
 	function encode(text) {
@@ -273,7 +294,7 @@ var NanocodeBash = (function(exports) {
 	function join$5(dir, name) {
 		return dir === "/" ? "/" + name : dir + "/" + name;
 	}
-	function create$1(options = {}) {
+	function create$2(options = {}) {
 		const maxFileBytes = options.maxFileBytes ?? 67108864;
 		const lower = options.lower;
 		const root = {
@@ -317,7 +338,7 @@ var NanocodeBash = (function(exports) {
 		};
 		const fault = async (path, follow = true) => {
 			if (!lower) return;
-			let parts = normalize(path).split("/").filter(Boolean);
+			let parts = normalize$1(path).split("/").filter(Boolean);
 			let node = root;
 			let hops = 0;
 			for (let i = 0;; i++) {
@@ -369,15 +390,15 @@ var NanocodeBash = (function(exports) {
 		};
 		const find = (path) => {
 			let node = root;
-			for (const part of normalize(path).split("/").filter(Boolean)) {
+			for (const part of normalize$1(path).split("/").filter(Boolean)) {
 				if (!node || node.kind !== "directory") return void 0;
 				node = node.children.get(part);
 			}
 			return node;
 		};
 		const real = (path, follow = true) => {
-			if (!links) return normalize(path);
-			let parts = normalize(path).split("/").filter(Boolean);
+			if (!links) return normalize$1(path);
+			let parts = normalize$1(path).split("/").filter(Boolean);
 			let hops = 0;
 			for (let i = 0; i < parts.length; i++) {
 				if (!follow && i === parts.length - 1) break;
@@ -396,7 +417,7 @@ var NanocodeBash = (function(exports) {
 			if (node.kind !== "directory") throw new FsError("ENOTDIR", path);
 			return node.children;
 		};
-		for (const [path, content] of Object.entries(options.files ?? {})) seed(normalize(path), typeof content === "string" ? encode(content) : content);
+		for (const [path, content] of Object.entries(options.files ?? {})) seed(normalize$1(path), typeof content === "string" ? encode(content) : content);
 		const now = {
 			stat(path) {
 				let target;
@@ -663,7 +684,7 @@ var NanocodeBash = (function(exports) {
 			if (!parser.done()) parser.fail();
 			return script;
 		} catch (error) {
-			if (error instanceof SyntaxError) error.complete = parser.complete;
+			if (error instanceof SyntaxError$1) error.complete = parser.complete;
 			throw error;
 		}
 	}
@@ -671,7 +692,7 @@ var NanocodeBash = (function(exports) {
 		try {
 			return { script: parse$2(source) };
 		} catch (error) {
-			if (!(error instanceof SyntaxError)) throw error;
+			if (!(error instanceof SyntaxError$1)) throw error;
 			return {
 				script: error.complete ? parse$2(source.slice(0, error.complete)) : [],
 				error
@@ -680,6 +701,19 @@ var NanocodeBash = (function(exports) {
 	}
 	function isDeclaration(word) {
 		return Array.isArray(word) && word.length === 1 && word[0].type === "text" && !word[0].quoted && DECLARATIONS.has(word[0].value);
+	}
+	function plain(code) {
+		return code >= 128 || SPECIAL_CODES[code] === 0;
+	}
+	function nameStart(code) {
+		return code >= 65 && code <= 90 || code >= 97 && code <= 122 || code === 95;
+	}
+	function boundary$1(code) {
+		if (code === 59 || code === 38 || code === 124 || code === 40 || code === 41) return true;
+		if (code === 60 || code === 62) return true;
+		if (code === 32 || code >= 9 && code <= 13) return true;
+		if (code < 128) return false;
+		return WHITESPACE.test(String.fromCharCode(code));
 	}
 	function push(parts, value, quoted) {
 		const last = parts[parts.length - 1];
@@ -736,10 +770,10 @@ var NanocodeBash = (function(exports) {
 		if (c !== void 0 && c in simple) return [simple[c], 1];
 		return ["\\" + (c ?? ""), c === void 0 ? 0 : 1];
 	}
-	var SyntaxError, sources, texts, heredocs, forced, newlines$1, META, RESERVED_STOP, NAME$2, SPECIAL, Parser$4, DECLARATIONS;
+	var SyntaxError$1, SOURCE, NO_EDITS, sources, texts, heredocs, forced, newlines$1, META, RESERVED_STOP, NAME$2, SPECIAL, Parser$4, DECLARATIONS, SPECIAL_CODES, WHITESPACE;
 	var init_Syntax = __esmMin(() => {
 		init_Fs();
-		SyntaxError = class extends Error {
+		SyntaxError$1 = class extends Error {
 			line;
 			context;
 			complete = 0;
@@ -749,7 +783,16 @@ var NanocodeBash = (function(exports) {
 				this.context = context;
 			}
 		};
-		sources = /* @__PURE__ */ new WeakMap();
+		SOURCE = Symbol("source");
+		NO_EDITS = [];
+		sources = {
+			get(word) {
+				return word[SOURCE];
+			},
+			set(word, source) {
+				word[SOURCE] = source;
+			}
+		};
 		texts = /* @__PURE__ */ new WeakMap();
 		heredocs = /* @__PURE__ */ new WeakMap();
 		forced = /* @__PURE__ */ new WeakSet();
@@ -795,16 +838,16 @@ var NanocodeBash = (function(exports) {
 				return this.src.slice(this.pos).match(/^(;;|&&|\|\||[;&|()<>\n]|[^\s;&|()<>]+)/)?.[0].replace("\n", "newline") ?? "EOF";
 			}
 			fail(token) {
-				if (this.done() && token === void 0) throw new SyntaxError("syntax error: unexpected end of file", this.end());
+				if (this.done() && token === void 0) throw new SyntaxError$1("syntax error: unexpected end of file", this.end());
 				const start = this.src.lastIndexOf("\n", this.pos - 1) + 1;
 				const end = this.src.indexOf("\n", this.pos);
-				throw new SyntaxError("syntax error near unexpected token `" + (token ?? this.peekToken()) + "'", this.line(), this.src.slice(start, end < 0 ? void 0 : end));
+				throw new SyntaxError$1("syntax error near unexpected token `" + (token ?? this.peekToken()) + "'", this.line(), this.src.slice(start, end < 0 ? void 0 : end));
 			}
 			end() {
 				return this.src.replace(/\n$/, "").split("\n").length + 1;
 			}
 			unmatched(close, line) {
-				throw new SyntaxError("unexpected EOF while looking for matching `" + close + "'", line);
+				throw new SyntaxError$1("unexpected EOF while looking for matching `" + close + "'", line);
 			}
 			lineOf(pos) {
 				return this.src.slice(0, pos).split("\n").length;
@@ -858,7 +901,18 @@ var NanocodeBash = (function(exports) {
 				return this.src.startsWith(text, this.pos);
 			}
 			reserved() {
-				return this.src.slice(this.pos).match(/^(\[\[|\]\]|[{}!]|[a-z]+)(?=[\s;&|()<>]|$)/)?.[1];
+				const src = this.src;
+				const pos = this.pos;
+				const c = src.charCodeAt(pos);
+				let end;
+				if ((c === 91 || c === 93) && src.charCodeAt(pos + 1) === c) end = pos + 2;
+				else if (c === 123 || c === 125 || c === 33) end = pos + 1;
+				else if (c >= 97 && c <= 122) {
+					end = pos + 1;
+					for (let code = src.charCodeAt(end); code >= 97 && code <= 122; code = src.charCodeAt(end)) end++;
+				} else return void 0;
+				if (end < src.length && !boundary$1(src.charCodeAt(end))) return void 0;
+				return src.slice(pos, end);
 			}
 			eat(word) {
 				this.separators();
@@ -1228,7 +1282,9 @@ var NanocodeBash = (function(exports) {
 						this.pos += 2;
 						break;
 					}
-					const op = [
+					const last = tokens[tokens.length - 1];
+					const regex = last !== void 0 && "word" in last && last.word.length === 1 && last.word[0].type === "text" && !last.word[0].quoted && last.word[0].value === "=~";
+					const op = regex ? void 0 : [
 						"&&",
 						"||",
 						"(",
@@ -1241,9 +1297,9 @@ var NanocodeBash = (function(exports) {
 						tokens.push({ op });
 						continue;
 					}
-					const last = tokens[tokens.length - 1];
-					const regex = last !== void 0 && "word" in last && last.word.length === 1 && last.word[0].type === "text" && !last.word[0].quoted && last.word[0].value === "=~";
+					const start = this.pos;
 					tokens.push({ word: this.word(regex) });
+					if (this.pos === start) this.fail();
 				}
 				return {
 					type: "test",
@@ -1270,7 +1326,7 @@ var NanocodeBash = (function(exports) {
 					if (this.redirect(command.redirects)) continue;
 					if (c === "\n" || c === ";" || c === "|" || c === "&" || c === ")" || c === "(") break;
 					const declaring = command.words.length > 0 && isDeclaration(command.words[0]);
-					if (!command.words.length || declaring) {
+					if ((!command.words.length || declaring) && nameStart(this.src.charCodeAt(this.pos))) {
 						const assign = this.src.slice(this.pos).match(/^([A-Za-z_][A-Za-z0-9_]*)(\[[^\]]*\])?(\+?)=/);
 						if (assign) {
 							this.pos += assign[0].length;
@@ -1340,7 +1396,7 @@ var NanocodeBash = (function(exports) {
 				};
 				if (match[2] === ">|") forced.add(redirect);
 				if (match[2] === "<<" || match[2] === "<<-") {
-					const raw = this.src.slice(this.pos).match(/^[^\s;&|()<>]+/)?.[0];
+					const raw = this.src.slice(this.pos).match(/^(?:'[^']*'|"(?:[^"\\]|\\[\s\S])*"|\\[\s\S]|[^\s;&|()<>'"\\])+/)?.[0];
 					if (!raw) this.fail(this.done() ? "newline" : void 0);
 					this.pos += raw.length;
 					const expand = !/['"\\]/.test(raw);
@@ -1360,7 +1416,7 @@ var NanocodeBash = (function(exports) {
 			word(regex = false) {
 				const start = this.pos;
 				const outer = this.edits;
-				this.edits = [];
+				this.edits = NO_EDITS;
 				const parts = this.wordParts(regex);
 				sources.set(parts, {
 					edits: this.edits,
@@ -1390,7 +1446,7 @@ var NanocodeBash = (function(exports) {
 					});
 				}
 				if (this.src[this.pos] === "~") {
-					const user = this.src.slice(this.pos + 1).match(/^[A-Za-z0-9_-]*(?=[\/\s;&|()<>]|$)/);
+					const user = this.src.slice(this.pos + 1).match(/^[A-Za-z0-9_-]*(?=[/\s;&|()<>]|$)/);
 					if (user) {
 						parts.push({
 							type: "tilde",
@@ -1430,6 +1486,7 @@ var NanocodeBash = (function(exports) {
 						} else value += this.src[this.pos++];
 						if (this.done()) this.fail();
 						this.pos++;
+						if (this.edits === NO_EDITS) this.edits = [];
 						this.edits.push({
 							end: this.pos,
 							start,
@@ -1437,12 +1494,29 @@ var NanocodeBash = (function(exports) {
 						});
 						push(parts, value, true);
 					} else if (c === "$" || c === "`") parts.push(this.dollar(false));
-					else {
-						push(parts, c, false);
-						this.pos++;
+					else if (!regex && "?*+@!".includes(c) && this.src[this.pos + 1] === "(") {
+						const end = this.extglob(this.pos + 1);
+						push(parts, this.src.slice(this.pos, end), false);
+						this.pos = end;
+					} else {
+						const start = this.pos++;
+						const src = this.src;
+						while (this.pos < src.length && plain(src.charCodeAt(this.pos))) this.pos++;
+						push(parts, start + 1 === this.pos ? c : src.slice(start, this.pos), false);
 					}
 				}
 				return parts;
+			}
+			extglob(open) {
+				let depth = 0;
+				for (let i = open; i < this.src.length; i++) {
+					const c = this.src[i];
+					if (c === "\\") i++;
+					else if (c === "\n") break;
+					else if (c === "(") depth++;
+					else if (c === ")" && --depth === 0) return i + 1;
+				}
+				this.fail();
 			}
 			double(parts, end) {
 				while (!this.done() && this.src[this.pos] !== end) {
@@ -1510,6 +1584,7 @@ var NanocodeBash = (function(exports) {
 					if (this.done()) this.unmatched(")", this.end());
 					if (!this.starts(")")) this.fail();
 					this.pos++;
+					if (this.edits === NO_EDITS) this.edits = [];
 					this.edits.push({
 						body,
 						end: this.pos,
@@ -1526,7 +1601,7 @@ var NanocodeBash = (function(exports) {
 					try {
 						return this.braced(quoted);
 					} catch (error) {
-						if (!(error instanceof SyntaxError)) throw error;
+						if (!(error instanceof SyntaxError$1)) throw error;
 						const end = this.closing(start);
 						if (end < 0 && this.done()) this.unmatched("}", this.lineOf(start));
 						if (end < 0) throw error;
@@ -1634,7 +1709,9 @@ var NanocodeBash = (function(exports) {
 					"^^",
 					"^",
 					",,",
-					","
+					",",
+					"~~",
+					"~"
 				].find((op) => this.starts(op));
 				if (operator) {
 					this.pos += operator.length;
@@ -1712,11 +1789,14 @@ var NanocodeBash = (function(exports) {
 			"export",
 			"readonly"
 		]);
+		SPECIAL_CODES = /* @__PURE__ */ new Uint8Array(128);
+		for (const c of META + "\\'\"$`?*+@!") SPECIAL_CODES[c.charCodeAt(0)] = 1;
+		WHITESPACE = /\s/;
 	});
 	// src/bash/internal/Print.ts
 	function functionText(name, body) {
 		const printer = new Printer(false);
-		printer.out = (RESERVED$1.has(name) ? "function " : "") + name + " () \n";
+		printer.out = (RESERVED.has(name) ? "function " : "") + name + " () \n";
 		printer.indentation = 4;
 		printer.inside++;
 		printer.out += "{ \n";
@@ -1798,10 +1878,10 @@ var NanocodeBash = (function(exports) {
 		}
 		return (fd ?? "") + redirect.op + " " + target;
 	}
-	var RESERVED$1, Printer;
+	var RESERVED, Printer;
 	var init_Print = __esmMin(() => {
 		init_Syntax();
-		RESERVED$1 = /* @__PURE__ */ new Set([
+		RESERVED = /* @__PURE__ */ new Set([
 			"!",
 			"[[",
 			"]]",
@@ -2145,7 +2225,7 @@ var NanocodeBash = (function(exports) {
 		if (text.length <= 15 && /^\d+$/.test(text)) return Number(text);
 		return digits(text, 10, text);
 	}
-	function tokenize$1(source) {
+	function tokenize$2(source) {
 		const cached = CACHE.get(source);
 		if (cached) return cached;
 		const tokens = [];
@@ -2417,7 +2497,7 @@ var NanocodeBash = (function(exports) {
 			return value;
 		}
 		try {
-			tokens = tokenize$1(source);
+			tokens = tokenize$2(source);
 			return evaluate();
 		} catch (error) {
 			if (!(error instanceof ArithError) || error.located) throw error;
@@ -2568,12 +2648,24 @@ var NanocodeBash = (function(exports) {
 	function escapeRegExp(text) {
 		return text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 	}
-	function globSource(pattern, path = false) {
+	function globSource(pattern, path = false, extended = false) {
 		let out = "";
 		for (let i = 0; i < pattern.length; i++) {
 			const c = pattern[i];
 			if (c === "\\" && i + 1 < pattern.length) out += escapeRegExp(pattern[++i]);
-			else if (c === "*") out += path ? "[^/]*" : "[\\s\\S]*";
+			else if (extended && "?*+@!".includes(c) && pattern[i + 1] === "(") {
+				const end = closing$3(pattern, i + 1);
+				if (end < 0) {
+					out += escapeRegExp(c);
+					continue;
+				}
+				const body = alternatives(pattern.slice(i + 2, end)).map((part) => globSource(part, path, true)).join("|");
+				const any = path ? "[^/]*" : "[\\s\\S]*";
+				const rest = globSource(pattern.slice(end + 1), path, true);
+				if (c === "!") out += "(?:(?!(?:" + body + ")" + rest + "$)" + any + ")";
+				else out += "(?:" + body + ")" + (c === "@" ? "" : c);
+				i = end;
+			} else if (c === "*") out += path ? "[^/]*" : "[\\s\\S]*";
 			else if (c === "?") out += path ? "[^/]" : "[\\s\\S]";
 			else if (c === "[") {
 				const result = bracket$2(pattern, i, true);
@@ -2585,11 +2677,33 @@ var NanocodeBash = (function(exports) {
 		}
 		return out;
 	}
+	function closing$3(pattern, open) {
+		let depth = 0;
+		for (let i = open; i < pattern.length; i++) if (pattern[i] === "\\") i++;
+		else if (pattern[i] === "(") depth++;
+		else if (pattern[i] === ")" && --depth === 0) return i;
+		return -1;
+	}
+	function alternatives(body) {
+		const parts = [];
+		let depth = 0;
+		let start = 0;
+		for (let i = 0; i < body.length; i++) if (body[i] === "\\") i++;
+		else if (body[i] === "(") depth++;
+		else if (body[i] === ")") depth--;
+		else if (body[i] === "|" && depth === 0) {
+			parts.push(body.slice(start, i));
+			start = i + 1;
+		}
+		parts.push(body.slice(start));
+		return parts;
+	}
 	function globRegExp(pattern, flags = "") {
 		return new RegExp("^" + globSource(pattern) + "$", flags);
 	}
-	function hasGlob(pattern) {
+	function hasGlob(pattern, extended = false) {
 		for (let i = 0; i < pattern.length; i++) if (pattern[i] === "\\") i++;
+		else if (extended && "+@!".includes(pattern[i]) && pattern[i + 1] === "(") return true;
 		else if (pattern[i] === "*" || pattern[i] === "?") return true;
 		else if (pattern[i] === "[" && bracket$2(pattern, i, true)) return true;
 		return false;
@@ -2667,7 +2781,7 @@ var NanocodeBash = (function(exports) {
 				if (result) {
 					emit(result[0]);
 					i = result[1] - 1;
-				} else emit("\\[");
+				} else throw new SyntaxError("Invalid regular expression: Unmatched [, [^, [:, [., or [=");
 			} else if (c === "*") repeat("*", "*");
 			else if (extended && (c === "+" || c === "?")) repeat(c, c);
 			else if (extended && (c === "(" || c === "|")) alternate(c);
@@ -3153,7 +3267,7 @@ var NanocodeBash = (function(exports) {
 		return what + ": (this simulated shell has no answer for this machine's " + what + ")";
 	}
 	function escapeGlob(text) {
-		return text.replace(/[*?[\]\\]/g, "\\$&");
+		return text.replace(/[*?[\]\\()|]/g, "\\$&");
 	}
 	function message(error) {
 		if (error instanceof FsError) return error.message;
@@ -3264,7 +3378,7 @@ var NanocodeBash = (function(exports) {
 	function globbed(pattern) {
 		let source = GLOBS.get(pattern);
 		if (source !== void 0) return source;
-		source = globSource(pattern);
+		source = globSource(pattern, false, true);
 		if (GLOBS.size > 1024) GLOBS.clear();
 		GLOBS.set(pattern, source);
 		return source;
@@ -3386,7 +3500,7 @@ var NanocodeBash = (function(exports) {
 			if (error instanceof ExitSignal$1 || error instanceof ReturnSignal$1 || error instanceof KillSignal) return error.status;
 			if (error instanceof PipeError) return 141;
 			if (error instanceof LoopSignal$1) return 0;
-			if (error instanceof SyntaxError) {
+			if (error instanceof SyntaxError$1) {
 				runner.failure = "syntax";
 				io.stderr.write(syntax(error, runner.state.arg0 + ": -c"));
 				return 2;
@@ -3413,7 +3527,7 @@ var NanocodeBash = (function(exports) {
 		if (/^(sqlite3|psql|mysql|gcc|cc|clang|g\+\+|cargo|rustc|go|java|javac|ruby|perl|php|docker|sudo|apt|apt-get|brew)$/.test(name)) return " (this simulated shell has no " + name + ")";
 		return "";
 	}
-	var LimitError, MachineError, CommandError, FatalError, ExitSignal$1, ReturnSignal$1, LoopSignal$1, PipeError, KillSignal, PIPE_HIGH, SPILL, PIPE_TAKE, WHOLE_INPUT, PIPE_SLICE, Pipe, Output, Input, STREAMS, UNREAD, ExpansionError, assumedUnset, Vars, State, BRACE_LIMIT, LINES, Runner, REGEXPS, GLOBS, SPLITTERS, noop, SIGNAL_SPECS, SIGNAL_NUMBERS, SIGNAL_NAMES, SHELL_BUILTINS, machineBuiltins, machineParameters, KEYWORDS$2, BUILTINS$2, UNSUPPORTED;
+	var LimitError, MachineError, CommandError, FatalError, ExitSignal$1, ReturnSignal$1, LoopSignal$1, PipeError, KillSignal, PIPE_HIGH, SPILL, PIPE_TAKE, WHOLE_INPUT, PIPE_SLICE, Pipe, Output, Input, STREAMS, UNREAD, ExpansionError, assumedUnset, Vars, State, BRACE_LIMIT, LINES, Runner, COMMAND_BUILTINS, REGEXPS, GLOBS, SPLITTERS, noop, SIGNAL_SPECS, SIGNAL_NUMBERS, SIGNAL_NAMES, SHELL_BUILTINS, machineBuiltins, machineParameters, KEYWORDS$2, BUILTINS$2, UNSUPPORTED;
 	var init_Shell = __esmMin(() => {
 		init_FileSystem();
 		init_Fs();
@@ -3977,9 +4091,11 @@ var NanocodeBash = (function(exports) {
 			#ignored = false;
 			#depth = 0;
 			#condition = 0;
+			#aliasing = /* @__PURE__ */ new Set();
 			loops = 0;
 			#substitution;
 			#trapping = false;
+			#borrowed = false;
 			constructor(host, state, signal, shared) {
 				this.host = host;
 				this.state = state;
@@ -4013,6 +4129,31 @@ var NanocodeBash = (function(exports) {
 				runner.loops = this.loops;
 				runner.#condition = this.#condition;
 				return runner;
+			}
+			#borrow() {
+				const runner = this.fork(this.state);
+				runner.#borrowed = true;
+				return runner;
+			}
+			#own() {
+				if (!this.#borrowed) return;
+				this.state = this.state.clone();
+				this.#borrowed = false;
+			}
+			#readonly(command) {
+				if (command.type !== "simple" || command.assigns.length || command.redirects.length) return false;
+				const state = this.state;
+				if (state.shopt.has("lastpipe") || state.traps.size && state.traps.has("DEBUG")) return false;
+				if (state.aliases.size && state.shopt.has("expand_aliases")) return false;
+				const head = command.words[0];
+				if (!Array.isArray(head) || head.length !== 1 || head[0].type !== "text" || head[0].quoted) return false;
+				const name = head[0].value;
+				if (BUILTINS$2[name] || state.functions.has(name) || !this.host.commands.has(name)) return false;
+				for (const word of command.words) {
+					if (!Array.isArray(word)) return false;
+					for (const part of word) if (part.type !== "text") return false;
+				}
+				return true;
 			}
 			async isolated(run, io) {
 				let status;
@@ -4094,7 +4235,7 @@ var NanocodeBash = (function(exports) {
 					await this.script(parse$2(action), io);
 				} catch (error) {
 					if (error instanceof ExitSignal$1) return error.status;
-					if (!(error instanceof ReturnSignal$1 || error instanceof LoopSignal$1 || error instanceof SyntaxError)) throw error;
+					if (!(error instanceof ReturnSignal$1 || error instanceof LoopSignal$1 || error instanceof SyntaxError$1)) throw error;
 				}
 				return status;
 			}
@@ -4303,7 +4444,7 @@ var NanocodeBash = (function(exports) {
 					for (let i = 1; i < count; i++) pipes.push(new Pipe(this.host.limits.maxBufferLength, this.signal, this.host.limits.maxMemoryBytes));
 					const settled = await Promise.allSettled(pipeline.commands.map((command, i) => {
 						const last = i === count - 1 && this.state.shopt.has("lastpipe");
-						const runner = last ? this : this.fork(this.state.clone());
+						const runner = last ? this : this.#readonly(command) ? this.#borrow() : this.fork(this.state.clone());
 						const stage = {
 							stdin: i ? Input.pipe(pipes[i - 1]) : io.stdin,
 							stdout: i < count - 1 ? Output.pipe(pipes[i]) : io.stdout,
@@ -4490,7 +4631,7 @@ var NanocodeBash = (function(exports) {
 						for (const item of command.items) {
 							let matched = falling;
 							if (!matched) {
-								for (const pattern of item.patterns) if (compiled("^" + globbed(await this.pattern(pattern, io)) + "$").test(value)) {
+								for (const pattern of item.patterns) if (compiled("^" + globbed(await this.pattern(pattern, io)) + "$", this.state.shopt.has("nocasematch") ? "i" : "").test(value)) {
 									matched = true;
 									break;
 								}
@@ -4570,7 +4711,7 @@ var NanocodeBash = (function(exports) {
 							if (map) return map.has(element[2]);
 							return this.state.vars.get(element[1])?.[Number(element[2])] !== void 0;
 						},
-						match: (text, pattern) => compiled("^" + globbed(pattern) + "$").test(text),
+						match: (text, pattern) => compiled("^" + globbed(pattern) + "$", this.state.shopt.has("nocasematch") ? "i" : "").test(text),
 						regex: (text, source) => {
 							const match = text.match(posixRegExp(source, true));
 							this.set("BASH_REMATCH", match ? [...match].map((group) => group ?? "") : []);
@@ -4604,7 +4745,7 @@ var NanocodeBash = (function(exports) {
 			}
 			async simple(command, io) {
 				this.#substitution = void 0;
-				if (command.line !== void 0) {
+				if (command.line !== void 0 && !this.#borrowed) {
 					const line = LINES[command.line] ??= String(command.line);
 					if (this.state.vars.get("LINENO")?.[0] !== line) this.state.vars.set("LINENO", [line]);
 				}
@@ -4613,6 +4754,19 @@ var NanocodeBash = (function(exports) {
 				if (head && Array.isArray(head) && head.length === 1 && head[0].type === "text" && !head[0].quoted && DECLARATIONS.has(head[0].value) && !this.state.functions.has(head[0].value)) return this.declare(head[0].value, command.words.slice(1), io);
 				const argv = [];
 				for (const word of command.words) if (Array.isArray(word)) append(argv, await this.fields(word, io));
+				if (this.state.aliases.size && head && Array.isArray(head) && head.length === 1 && head[0].type === "text" && !head[0].quoted && this.state.shopt.has("expand_aliases") && !this.#aliasing.has(head[0].value)) {
+					const name = head[0].value;
+					const value = this.state.aliases.get(name);
+					if (value !== void 0) {
+						this.#aliasing.add(name);
+						try {
+							const rest = argv.slice(1).map(shellQuote$3).join(" ");
+							return await this.script(parse$2(value + (rest ? " " + rest : "")), io);
+						} finally {
+							this.#aliasing.delete(name);
+						}
+					}
+				}
 				if (!argv.length) {
 					for (const assign of command.assigns) await this.assign(assign, io);
 					return this.#substitution ?? 0;
@@ -4923,6 +5077,7 @@ var NanocodeBash = (function(exports) {
 					resolve: (path) => resolvePath(cwd, path),
 					run: async (argv, stdin) => {
 						this.check();
+						this.#own();
 						return this.dispatch(argv, {
 							stdin: stdin === void 0 ? io.stdin : new Input(stdin),
 							stdout: io.stdout,
@@ -4936,7 +5091,7 @@ var NanocodeBash = (function(exports) {
 						try {
 							parsed = parse$2(script);
 						} catch (error) {
-							if (!(error instanceof SyntaxError)) throw error;
+							if (!(error instanceof SyntaxError$1)) throw error;
 							io.stderr.write(this.prefix() + error.message + "\n");
 							return {
 								status: 2,
@@ -5037,7 +5192,7 @@ var NanocodeBash = (function(exports) {
 				try {
 					await this.script(parse$2(action), io);
 				} catch (error) {
-					if (!(error instanceof ReturnSignal$1 || error instanceof SyntaxError)) throw error;
+					if (!(error instanceof ReturnSignal$1 || error instanceof SyntaxError$1)) throw error;
 				} finally {
 					this.#trapping = false;
 					this.state.status = status;
@@ -5053,7 +5208,7 @@ var NanocodeBash = (function(exports) {
 				try {
 					await this.script(parse$2(action), io);
 				} catch (error) {
-					if (!(error instanceof SyntaxError)) throw error;
+					if (!(error instanceof SyntaxError$1)) throw error;
 				} finally {
 					this.#trapping = false;
 					this.state.status = status;
@@ -5261,12 +5416,15 @@ var NanocodeBash = (function(exports) {
 				this.enter();
 				const out = this.buffer();
 				try {
-					const status = await this.subshell(() => this.script(body, {
-						stdin: io.stdin,
-						stdout: out,
-						stderr: io.stderr,
-						fds: io.fds
-					}));
+					const status = await this.subshell(() => {
+						if (!this.state.shopt.has("inherit_errexit")) this.state.options.errexit = false;
+						return this.script(body, {
+							stdin: io.stdin,
+							stdout: out,
+							stderr: io.stderr,
+							fds: io.fds
+						});
+					});
 					this.#substitution = status;
 					this.state.status = status;
 				} finally {
@@ -5464,7 +5622,7 @@ var NanocodeBash = (function(exports) {
 				let result = values;
 				if (op === "#" || op === "##" || op === "%" || op === "%%") {
 					const pattern = await this.pattern(part.arg ?? [], io);
-					if (!hasGlob(pattern)) {
+					if (!hasGlob(pattern, true)) {
 						const literal = pattern.includes("\\") ? pattern.replace(/\\([\s\S])/g, "$1") : pattern;
 						result = result.map((value) => op[0] === "#" ? value.startsWith(literal) ? value.slice(literal.length) : value : value.endsWith(literal) ? value.slice(0, value.length - literal.length) : value);
 						return {
@@ -5487,7 +5645,7 @@ var NanocodeBash = (function(exports) {
 				} else if (op.startsWith("/")) {
 					const pattern = await this.pattern(part.arg ?? [], io);
 					const replacement = part.arg2 ? await this.string(part.arg2, io) : "";
-					if (pattern !== "" && !hasGlob(pattern)) {
+					if (pattern !== "" && !hasGlob(pattern, true)) {
 						const literal = pattern.includes("\\") ? pattern.replace(/\\([\s\S])/g, "$1") : pattern;
 						result = result.map((value) => {
 							if (op === "//") return value.split(literal).join(replacement);
@@ -5519,10 +5677,10 @@ var NanocodeBash = (function(exports) {
 					};
 					if (all) result = slice(name === "@" || name === "*" ? ["bash", ...result] : result);
 					else result = [slice([...result[0]]).join("")];
-				} else if (op === "^^" || op === ",," || op === "^" || op === ",") {
-					const source = part.arg?.length ? globSource(await this.pattern(part.arg, io)) : "";
+				} else if (op === "^^" || op === ",," || op === "^" || op === "," || op === "~~" || op === "~") {
+					const source = part.arg?.length ? globSource(await this.pattern(part.arg, io), false, true) : "";
 					const allowed = source ? new RegExp("^(?:" + source + ")$") : void 0;
-					const convert = (c) => allowed && !allowed.test(c) ? c : op[0] === "^" ? c.toUpperCase() : c.toLowerCase();
+					const convert = (c) => allowed && !allowed.test(c) ? c : op[0] === "^" ? c.toUpperCase() : op[0] === "," ? c.toLowerCase() : c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase();
 					result = result.map((value) => op.length === 2 ? [...value].map(convert).join("") : value ? convert(value.charAt(0)) + value.slice(1) : value);
 				} else if (op === "@Q" || op === "@K") result = result.map(shellQuote$3);
 				else if (op === "@U") result = result.map((value) => value.toUpperCase());
@@ -5622,7 +5780,7 @@ var NanocodeBash = (function(exports) {
 			async fields(word, io) {
 				if (word.length === 1) {
 					const part = word[0];
-					if (part.type === "text" && (part.quoted || !part.value.includes("{") && !hasGlob(part.value))) return part.quoted || part.value ? [part.value] : [];
+					if (part.type === "text" && (part.quoted || !part.value.includes("{") && !hasGlob(part.value, true))) return part.quoted || part.value ? [part.value] : [];
 				}
 				const out = [];
 				for (const expanded of braceExpand(word)) {
@@ -5659,7 +5817,7 @@ var NanocodeBash = (function(exports) {
 						} else if (!piece.split || !split) {
 							current.text += piece.text;
 							current.pattern += piece.text;
-							current.glob ||= hasGlob(piece.text);
+							current.glob ||= hasGlob(piece.text, true);
 							current.content ||= piece.text !== "";
 						} else {
 							const segments = piece.text.split(split);
@@ -5671,7 +5829,7 @@ var NanocodeBash = (function(exports) {
 								if (segment !== "") {
 									current.text += segment;
 									current.pattern += segment;
-									current.glob ||= hasGlob(segment);
+									current.glob ||= hasGlob(segment, true);
 									current.content = true;
 								}
 							});
@@ -5728,13 +5886,13 @@ var NanocodeBash = (function(exports) {
 					}
 					for (const base of paths) {
 						const dir = this.resolve(base || ".");
-						if (!hasGlob(segment)) {
+						if (!hasGlob(segment, true)) {
 							const path = join(base, segment.replace(/\\([\s\S])/g, "$1"));
 							if (last ? await this.host.fs.stat(this.resolve(path)) : (await this.host.fs.stat(this.resolve(path)))?.kind === "directory") next.push(path);
 							continue;
 						}
 						if ((await this.host.fs.stat(dir))?.kind !== "directory") continue;
-						const regex = new RegExp("^" + globSource(segment, true) + "$");
+						const regex = new RegExp("^" + globSource(segment, true, true) + "$");
 						const hidden = segment.startsWith(".") || segment.startsWith("\\.");
 						for (const name of await this.host.fs.list(dir)) {
 							if (name.startsWith(".") && !hidden && !dot) continue;
@@ -5756,6 +5914,16 @@ var NanocodeBash = (function(exports) {
 				return [...new Set(paths)].sort();
 			}
 		};
+		COMMAND_BUILTINS = /* @__PURE__ */ new Set([
+			"[",
+			"echo",
+			"false",
+			"kill",
+			"printf",
+			"pwd",
+			"test",
+			"true"
+		]);
 		REGEXPS = /* @__PURE__ */ new Map();
 		GLOBS = /* @__PURE__ */ new Map();
 		SPLITTERS = /* @__PURE__ */ new Map();
@@ -6593,6 +6761,7 @@ var NanocodeBash = (function(exports) {
 			},
 			async builtin(args, io) {
 				const builtin = args.length ? BUILTINS$2[args[0]] : void 0;
+				if (!builtin && COMMAND_BUILTINS.has(args[0]) && this.host.commands.has(args[0])) return this.dispatch(args, io, false);
 				if (!builtin) throw new CommandError((args[0] ?? "") + ": not a shell builtin");
 				if (this.host.machine && machineBuiltin(args[0], args.slice(1))) throw new MachineError(unanswered(args[0]));
 				return builtin.call(this, args.slice(1), io);
@@ -6761,7 +6930,7 @@ var NanocodeBash = (function(exports) {
 		BUILTINS$2["."] = BUILTINS$2.source;
 		BUILTINS$2.readarray = BUILTINS$2.mapfile;
 		BUILTINS$2.sh = BUILTINS$2.bash;
-		UNSUPPORTED = /^(unrecognized|invalid|unsupported|unknown) option|^Unknown option|not supported|network access is not available|Cannot find package 'pyodide'/;
+		UNSUPPORTED = /^(unrecognized|invalid|unsupported|unknown) option|^Unknown option|not supported|network access is not available/;
 	});
 	// src/bash/internal/Psh.ts
 	init_FileSystem();
@@ -6841,12 +7010,12 @@ var NanocodeBash = (function(exports) {
 	const empty = /* @__PURE__ */ new Uint8Array(0);
 	const utf8 = new TextEncoder();
 	const text$3 = new TextDecoder();
-	const instances$2 = /* @__PURE__ */ new WeakMap();
+	const instances$1 = /* @__PURE__ */ new WeakMap();
 	var EngineError = class extends Error {
 		name = "Psh.EngineError";
 	};
 	function load$1(module) {
-		const loaded = instances$2.get(module);
+		const loaded = instances$1.get(module);
 		if (loaded) return loaded;
 		const instance = {
 			current: void 0,
@@ -6871,8 +7040,8 @@ var NanocodeBash = (function(exports) {
 			instance.exports.psh_init();
 			return instance;
 		});
-		instances$2.set(module, created);
-		created.catch(() => instances$2.delete(module));
+		instances$1.set(module, created);
+		created.catch(() => instances$1.delete(module));
 		return created;
 	}
 	function keep(options) {
@@ -6897,7 +7066,7 @@ var NanocodeBash = (function(exports) {
 	async function run$1(module, options) {
 		const instance = await load$1(module);
 		if (instance.failure !== void 0) {
-			instances$2.delete(module);
+			instances$1.delete(module);
 			return run$1(module, options);
 		}
 		const x = instance.exports;
@@ -6937,7 +7106,7 @@ var NanocodeBash = (function(exports) {
 			const started = x.psh_shell_start(host.id, input(instance, start(options)));
 			if (started !== 0) throw new EngineError("psh refused the script (" + started + ")");
 		} catch (error) {
-			if (host.id) release$1(instance, host);
+			if (host.id) release$2(instance, host);
 			const failure = broken(module, instance, error);
 			if (failure === memoryExceeded) return exceeded();
 			throw failure;
@@ -6948,11 +7117,11 @@ var NanocodeBash = (function(exports) {
 			for (;;) {
 				host.woken = false;
 				const step = enter(instance, host, () => x.psh_shell_step(host.id, budget));
-				if (instance.failure !== void 0) throw failed(instance);
+				if (instance.failure !== void 0) throw failed$1(instance);
 				if (step === 0) break;
 				if (step === -1) {
 					if (!host.woken) await new Promise((resolve) => host.waiting = resolve);
-					if (instance.failure !== void 0) throw failed(instance);
+					if (instance.failure !== void 0) throw failed$1(instance);
 					continue;
 				}
 				if (step !== -2) throw new EngineError("psh step answered " + step);
@@ -6970,11 +7139,11 @@ var NanocodeBash = (function(exports) {
 			throw failure;
 		} finally {
 			options.signal.removeEventListener("abort", host.cancel);
-			release$1(instance, host);
+			release$2(instance, host);
 		}
 	}
 	function runNow(instance, options) {
-		if (instance.failure !== void 0) throw failed(instance);
+		if (instance.failure !== void 0) throw failed$1(instance);
 		const x = instance.exports;
 		const host = {
 			cancel: () => {
@@ -6999,7 +7168,7 @@ var NanocodeBash = (function(exports) {
 			for (;;) {
 				if (options.signal.aborted) host.cancel();
 				const step = enter(instance, host, () => x.psh_shell_step(host.id, budget));
-				if (instance.failure !== void 0) throw failed(instance);
+				if (instance.failure !== void 0) throw failed$1(instance);
 				if (step === 0) break;
 				if (step === -1) return void 0;
 				if (step !== -2) throw new EngineError("psh step answered " + step);
@@ -7014,7 +7183,7 @@ var NanocodeBash = (function(exports) {
 			if (failure === memoryExceeded) return exceeded();
 			throw failure;
 		} finally {
-			if (host.id) release$1(instance, host);
+			if (host.id) release$2(instance, host);
 		}
 	}
 	function identity(env) {
@@ -7069,14 +7238,14 @@ var NanocodeBash = (function(exports) {
 		})();
 		const message = spent ? memoryExceeded.message : "psh stopped: " + (instance.failure ?? error.message);
 		instance.failure = message;
-		instances$2.delete(module);
+		instances$1.delete(module);
 		for (const other of instance.shells.values()) wake(other);
 		return spent ? memoryExceeded : new EngineError(message);
 	}
-	function failed(instance) {
+	function failed$1(instance) {
 		return instance.failure === memoryExceeded.message ? memoryExceeded : new EngineError(instance.failure);
 	}
-	function release$1(instance, host) {
+	function release$2(instance, host) {
 		for (const timer of host.timers) clearTimeout(timer);
 		host.timers.clear();
 		instance.shells.delete(host.id);
@@ -7108,7 +7277,7 @@ var NanocodeBash = (function(exports) {
 		memory(instance).set(data, ptr);
 		return data.length;
 	}
-	function answer$1(instance, op, reply) {
+	function answer(instance, op, reply) {
 		if (instance.failure !== void 0) return;
 		try {
 			instance.exports.psh_complete(op, reply.err, input(instance, reply.data));
@@ -7137,10 +7306,10 @@ var NanocodeBash = (function(exports) {
 				} catch (error) {
 					return -code(host, error);
 				}
-				perform(host, asked).then((data) => answer$1(instance, call.op, {
+				perform(host, asked).then((data) => answer(instance, call.op, {
 					data: data ?? empty,
 					err: 0
-				}), (error) => answer$1(instance, call.op, {
+				}), (error) => answer(instance, call.op, {
 					data: empty,
 					err: code(host, error)
 				}));
@@ -7150,7 +7319,7 @@ var NanocodeBash = (function(exports) {
 				const host = instance.current;
 				const timer = setTimeout(() => {
 					host?.timers.delete(timer);
-					answer$1(instance, call.op, {
+					answer(instance, call.op, {
 						data: empty,
 						err: 0
 					});
@@ -7174,7 +7343,7 @@ var NanocodeBash = (function(exports) {
 			case kind.spawn: {
 				const host = instance.current;
 				if (!host) throw new EngineError("psh started a command outside a step");
-				spawn$1(instance, {
+				spawn(instance, {
 					host,
 					payload: payload(),
 					pid: call.arg
@@ -7329,7 +7498,7 @@ var NanocodeBash = (function(exports) {
 	}
 	function start(options) {
 		const out = writer();
-		if (plain(options.script)) out.string(options.script);
+		if (plain$1(options.script)) out.string(options.script);
 		else out.bytes(encode(options.script));
 		out.string("/bin/bash");
 		out.u32(0);
@@ -7567,7 +7736,7 @@ var NanocodeBash = (function(exports) {
 		}
 		proc.pending.clear();
 	}
-	function spawn$1(instance, options) {
+	function spawn(instance, options) {
 		const fields = reader(options.payload);
 		const argv = [];
 		for (let left = fields.u32(); left > 0; left--) argv.push(decode(fields.bytes()));
@@ -8826,7 +8995,7 @@ var NanocodeBash = (function(exports) {
 		if (lead === void 0) leads.set(regex, lead = leadMatcher(regex));
 		return lead;
 	}
-	function scan$1(text, options) {
+	function scan(text, options) {
 		const all = text.split(options.separator ?? "\n");
 		if (all[all.length - 1] === "") all.pop();
 		const regex = options.regex;
@@ -9241,7 +9410,7 @@ var NanocodeBash = (function(exports) {
 				}
 				const silent = listing || binary;
 				let output = "";
-				matches += scan$1(binary ? text.replace(/\0/g, "\n") : text, {
+				matches += scan(binary ? text.replace(/\0/g, "\n") : text, {
 					regex,
 					invert: f.has("v"),
 					max: max - matches,
@@ -9988,6 +10157,7 @@ var NanocodeBash = (function(exports) {
 		t: "	",
 		v: "\v"
 	};
+	const TR_DENSE = 16384;
 	function trSet(spec) {
 		const out = [];
 		const text = bytewise(spec.replace(/\\([0-7]{1,3}|[\s\S])/g, (_, body) => /^[0-7]/.test(body) ? byte$1(parseInt(body, 8)) : TR_ESCAPES[body] ?? body));
@@ -10037,6 +10207,9 @@ var NanocodeBash = (function(exports) {
 		let last = -1;
 		let map;
 		let squeezable;
+		const sparse = /* @__PURE__ */ new Map();
+		const sparseSqueeze = /* @__PURE__ */ new Map();
+		let seen = 0;
 		const squeeze = f.has("s") ? new Set(f.has("d") || second === void 0 ? second === void 0 ? [...set1] : set2 : set2) : void 0;
 		const translate = (c) => {
 			if (f.has("d")) return inSet1(c) ? void 0 : c;
@@ -10049,20 +10222,34 @@ var NanocodeBash = (function(exports) {
 		const simple = [...list1, ...set2].every((c) => c.length === 1 && !/[\uD800-\uDFFF]/.test(c));
 		const convert = (input) => {
 			if (simple && (!complement || !/[\uD800-\uDFFF]/.test(input))) {
-				if (!map || !squeezable) {
-					map = /* @__PURE__ */ new Int32Array(65536);
-					squeezable = /* @__PURE__ */ new Uint8Array(65536);
-					for (let code = 0; code < 65536; code++) {
-						const value = translate(String.fromCharCode(code));
-						map[code] = value === void 0 ? -1 : value.charCodeAt(0);
-						if (value !== void 0 && squeezes(value)) squeezable[map[code]] = 1;
-					}
+				seen += input.length;
+				if (map === void 0 && seen > TR_DENSE) {
+					map = (/* @__PURE__ */ new Int32Array(65536)).fill(-2);
+					squeezable = (/* @__PURE__ */ new Int8Array(65536)).fill(-1);
+					for (const [code, value] of sparse) map[code] = value;
+					for (const [code, value] of sparseSqueeze) squeezable[code] = value;
 				}
 				const codes = new Uint16Array(input.length);
 				let n = 0;
 				for (let i = 0; i < input.length; i++) {
-					const value = map[input.charCodeAt(i)];
-					if (value < 0 || value === last && squeezable[value]) continue;
+					const code = input.charCodeAt(i);
+					let value = map !== void 0 ? map[code] : sparse.get(code) ?? -2;
+					if (value === -2) {
+						const translated = translate(String.fromCharCode(code));
+						value = translated === void 0 ? -1 : translated.charCodeAt(0);
+						if (map !== void 0) map[code] = value;
+						else sparse.set(code, value);
+					}
+					if (value < 0) continue;
+					if (value === last) {
+						let can = squeezable !== void 0 ? squeezable[value] : sparseSqueeze.get(value) ?? -1;
+						if (can < 0) {
+							can = squeezes(String.fromCharCode(value)) ? 1 : 0;
+							if (squeezable !== void 0) squeezable[value] = can;
+							else sparseSqueeze.set(value, can);
+						}
+						if (can) continue;
+					}
 					codes[n++] = value;
 					last = value;
 				}
@@ -10813,6 +11000,29 @@ var NanocodeBash = (function(exports) {
 		await put(ctx, out);
 		return 0;
 	};
+	const cksum = async (ctx) => {
+		let status = 0;
+		for (const operand of ctx.args.length ? ctx.args : ["-"]) {
+			let bytes;
+			try {
+				bytes = operand === "-" ? encode(ctx.stdin.read()) : await ctx.fs.read(ctx.resolve(operand));
+			} catch (error) {
+				if (!(error instanceof FsError)) throw error;
+				ctx.stderr.write("cksum: " + readFailure(ctx, operand, error) + "\n");
+				status = 1;
+				continue;
+			}
+			let crc = 0;
+			const step = (byte) => {
+				crc ^= byte << 24;
+				for (let bit = 0; bit < 8; bit++) crc = crc & 2147483648 ? crc << 1 ^ 79764919 : crc << 1;
+			};
+			for (const byte of bytes) step(byte);
+			for (let length = bytes.length; length > 0; length = Math.floor(length / 256)) step(length & 255);
+			ctx.stdout.write((~crc >>> 0) + " " + bytes.length + (ctx.args.length ? " " + operand : "") + "\n");
+		}
+		return status;
+	};
 	function digest(algorithm) {
 		return checksum(async (bytes) => [...new Uint8Array(await crypto.subtle.digest(algorithm, bytes))].map((byte) => byte.toString(16).padStart(2, "0")).join(""), algorithm.replace("-", ""));
 	}
@@ -11279,6 +11489,7 @@ var NanocodeBash = (function(exports) {
 		sha256sum: digest("SHA-256"),
 		sha1sum: digest("SHA-1"),
 		sha512sum: digest("SHA-512"),
+		cksum,
 		expr,
 		fold,
 		column,
@@ -11407,13 +11618,13 @@ var NanocodeBash = (function(exports) {
 	];
 	var AwkError = class extends Error {};
 	const ASCII = /^[^\u0080-\uffff]*$/;
-	function binary(data) {
+	function binary$1(data) {
 		let out = "";
 		for (let i = 0; i < data.length; i += 8192) out += String.fromCharCode.apply(null, data.subarray(i, i + 8192));
 		return out;
 	}
 	function bytes(text) {
-		return ASCII.test(text) ? text : binary(encode(text));
+		return ASCII.test(text) ? text : binary$1(encode(text));
 	}
 	function raw(text) {
 		const data = new Uint8Array(text.length);
@@ -14408,7 +14619,7 @@ var NanocodeBash = (function(exports) {
 				if (!reader) {
 					let content;
 					try {
-						content = file === "-" || file === "/dev/stdin" || file === "/dev/fd/0" ? bytes(await this.ctx.stdin.text()) : binary(await this.ctx.fs.read(this.ctx.resolve(chars(file))));
+						content = file === "-" || file === "/dev/stdin" || file === "/dev/fd/0" ? bytes(await this.ctx.stdin.text()) : binary$1(await this.ctx.fs.read(this.ctx.resolve(chars(file))));
 					} catch (error) {
 						if (error instanceof FsError && error.code === "EISDIR") throw new AwkError("read error (Is a directory)");
 						return -1;
@@ -14762,7 +14973,7 @@ var NanocodeBash = (function(exports) {
 		}
 		const sources = [];
 		for (const file of files) try {
-			sources.push(binary(await ctx.fs.read(ctx.resolve(file))));
+			sources.push(binary$1(await ctx.fs.read(ctx.resolve(file))));
 		} catch (error) {
 			if (!(error instanceof FsError)) throw error;
 			throw new CommandError("cannot open \"" + file + "\" (No such file or directory)", 2);
@@ -14806,7 +15017,7 @@ var NanocodeBash = (function(exports) {
 		interp.globals.set("ARGC", operands.length + 1);
 		const read = async (operand) => {
 			try {
-				return binary(await ctx.fs.read(ctx.resolve(chars(operand))));
+				return binary$1(await ctx.fs.read(ctx.resolve(chars(operand))));
 			} catch (error) {
 				if (!(error instanceof FsError)) throw error;
 				throw new AwkError(error.code === "EISDIR" ? "read error (Is a directory)" : "cannot open \"" + operand + "\" (No such file or directory)");
@@ -15037,12 +15248,12 @@ var NanocodeBash = (function(exports) {
 		if (preserve && fs.chmod) await fs.chmod(to, stat.mode);
 		if (preserve && fs.utimes) await fs.utimes(to, stat.mtime);
 	}
-	async function removeTree$2(fs, path) {
-		if ((fs.lstat ? await fs.lstat(path) : await fs.stat(path))?.kind === "directory") for (const name of await fs.list(path)) await removeTree$2(fs, (path === "/" ? "" : path) + "/" + name);
+	async function removeTree$3(fs, path) {
+		if ((fs.lstat ? await fs.lstat(path) : await fs.stat(path))?.kind === "directory") for (const name of await fs.list(path)) await removeTree$3(fs, (path === "/" ? "" : path) + "/" + name);
 		await fs.remove(path);
 	}
 	async function mkdirs(fs, path) {
-		const parts = normalize(path).split("/").filter(Boolean);
+		const parts = normalize$1(path).split("/").filter(Boolean);
 		let current = "";
 		for (const part of parts) {
 			current += "/" + part;
@@ -15413,7 +15624,7 @@ var NanocodeBash = (function(exports) {
 				status = 1;
 				continue;
 			}
-			await removeTree$2(linked(ctx), path);
+			await removeTree$3(linked(ctx), path);
 			if (parsed.flags.has("v")) ctx.stdout.write("removed '" + operand + "'\n");
 		}
 		return status;
@@ -18809,7 +19020,7 @@ var NanocodeBash = (function(exports) {
 		"file"
 	]);
 	const quote$2 = (value) => "'" + value.replace(/'/g, "'\\''") + "'";
-	const words = (text) => text.split(/\s+/).filter(Boolean);
+	const words$1 = (text) => text.split(/\s+/).filter(Boolean);
 	function patternMatch(pattern, text) {
 		const index = pattern.indexOf("%");
 		if (index < 0) return pattern === text ? "" : void 0;
@@ -18968,7 +19179,7 @@ var NanocodeBash = (function(exports) {
 			if (!found) {
 				if (name.length === 2 && "@<^+?*%".includes(name[0]) && (name[1] === "D" || name[1] === "F")) {
 					const value = await this.variable(name[0], locals);
-					return words(value).map((word) => {
+					return words$1(value).map((word) => {
 						const slash = word.lastIndexOf("/");
 						return name[1] === "D" ? slash < 0 ? "." : word.slice(0, slash) || "/" : word.slice(slash + 1);
 					}).join(" ");
@@ -18990,7 +19201,7 @@ var NanocodeBash = (function(exports) {
 				const from = rest.slice(0, eq);
 				const to = rest.slice(eq + 1);
 				const value = await this.variable(variable, locals);
-				return words(value).map((word) => from.includes("%") ? patternReplace(from, to, word) : word.endsWith(from) ? word.slice(0, word.length - from.length) + to : word).join(" ");
+				return words$1(value).map((word) => from.includes("%") ? patternReplace(from, to, word) : word.endsWith(from) ? word.slice(0, word.length - from.length) + to : word).join(" ");
 			}
 			return this.variable(name, locals);
 		}
@@ -19013,59 +19224,59 @@ var NanocodeBash = (function(exports) {
 						await arg(1),
 						await rest(2)
 					];
-					return words(text).map((word) => patternReplace(from.trim(), to.trim(), word)).join(" ");
+					return words$1(text).map((word) => patternReplace(from.trim(), to.trim(), word)).join(" ");
 				}
-				case "strip": return words(await rest(0)).join(" ");
+				case "strip": return words$1(await rest(0)).join(" ");
 				case "findstring": {
 					const [needle, text] = [await arg(0), await rest(1)];
 					return text.includes(needle) ? needle : "";
 				}
 				case "filter":
 				case "filter-out": {
-					const patterns = words(await arg(0));
+					const patterns = words$1(await arg(0));
 					const keep = name === "filter";
-					return words(await rest(1)).filter((word) => patterns.some((pattern) => patternMatch(pattern, word) !== void 0) === keep).join(" ");
+					return words$1(await rest(1)).filter((word) => patterns.some((pattern) => patternMatch(pattern, word) !== void 0) === keep).join(" ");
 				}
-				case "sort": return [...new Set(words(await rest(0)))].sort().join(" ");
+				case "sort": return [...new Set(words$1(await rest(0)))].sort().join(" ");
 				case "word": {
 					const n = Number((await arg(0)).trim());
 					if (!Number.isInteger(n) || n < 1) throw new MakeError("*** non-numeric first argument to 'word' function.  Stop.");
-					return words(await rest(1))[n - 1] ?? "";
+					return words$1(await rest(1))[n - 1] ?? "";
 				}
-				case "words": return String(words(await rest(0)).length);
+				case "words": return String(words$1(await rest(0)).length);
 				case "wordlist": {
 					const start = Number((await arg(0)).trim());
 					const end = Number((await arg(1)).trim());
-					return words(await rest(2)).slice(start - 1, end).join(" ");
+					return words$1(await rest(2)).slice(start - 1, end).join(" ");
 				}
-				case "firstword": return words(await rest(0))[0] ?? "";
-				case "lastword": return words(await rest(0)).at(-1) ?? "";
-				case "dir": return words(await rest(0)).map((word) => word.includes("/") ? word.slice(0, word.lastIndexOf("/") + 1) : "./").join(" ");
-				case "notdir": return words(await rest(0)).map((word) => word.slice(word.lastIndexOf("/") + 1)).join(" ");
-				case "suffix": return words(await rest(0)).map((word) => word.match(/\.[^./]*$/)?.[0] ?? "").filter(Boolean).join(" ");
-				case "basename": return words(await rest(0)).map((word) => word.replace(/\.[^./]*$/, "")).join(" ");
+				case "firstword": return words$1(await rest(0))[0] ?? "";
+				case "lastword": return words$1(await rest(0)).at(-1) ?? "";
+				case "dir": return words$1(await rest(0)).map((word) => word.includes("/") ? word.slice(0, word.lastIndexOf("/") + 1) : "./").join(" ");
+				case "notdir": return words$1(await rest(0)).map((word) => word.slice(word.lastIndexOf("/") + 1)).join(" ");
+				case "suffix": return words$1(await rest(0)).map((word) => word.match(/\.[^./]*$/)?.[0] ?? "").filter(Boolean).join(" ");
+				case "basename": return words$1(await rest(0)).map((word) => word.replace(/\.[^./]*$/, "")).join(" ");
 				case "addsuffix": {
 					const suffix = await arg(0);
-					return words(await rest(1)).map((word) => word + suffix).join(" ");
+					return words$1(await rest(1)).map((word) => word + suffix).join(" ");
 				}
 				case "addprefix": {
 					const prefix = await arg(0);
-					return words(await rest(1)).map((word) => prefix + word).join(" ");
+					return words$1(await rest(1)).map((word) => prefix + word).join(" ");
 				}
 				case "join": {
-					const a = words(await arg(0));
-					const b = words(await rest(1));
+					const a = words$1(await arg(0));
+					const b = words$1(await rest(1));
 					return Array.from({ length: Math.max(a.length, b.length) }, (_, index) => (a[index] ?? "") + (b[index] ?? "")).join(" ");
 				}
 				case "wildcard": {
 					const out = [];
-					for (const pattern of words(await rest(0))) out.push(...await this.glob(pattern));
+					for (const pattern of words$1(await rest(0))) out.push(...await this.glob(pattern));
 					return out.join(" ");
 				}
 				case "realpath":
 				case "abspath": {
 					const out = [];
-					for (const word of words(await rest(0))) {
+					for (const word of words$1(await rest(0))) {
 						const path = this.resolve(word);
 						if (name === "realpath" && !await this.ctx.fs.stat(path)) continue;
 						out.push(path);
@@ -19089,7 +19300,7 @@ var NanocodeBash = (function(exports) {
 				}
 				case "foreach": {
 					const variable = (await arg(0)).trim();
-					const list = words(await arg(1));
+					const list = words$1(await arg(1));
 					const body = parts.slice(2).join(",");
 					const out = [];
 					for (const item of list) {
@@ -19195,7 +19406,7 @@ var NanocodeBash = (function(exports) {
 				throw new MakeError(name + ": No such file or directory");
 			}
 			this.makefiles.push(name);
-			this.set("MAKEFILE_LIST", words((this.variables.get("MAKEFILE_LIST")?.value ?? "") + " " + name).join(" "), false, "file");
+			this.set("MAKEFILE_LIST", words$1((this.variables.get("MAKEFILE_LIST")?.value ?? "") + " " + name).join(" "), false, "file");
 			await this.parse(text.split("\n"), name);
 		}
 		async parse(lines, file) {
@@ -19288,14 +19499,14 @@ var NanocodeBash = (function(exports) {
 				}
 				const include = trimmed.match(/^(-?include|sinclude)\s+(.*)$/);
 				if (include) {
-					for (const name of words(await this.expand(include[2]))) await this.load(name, name, include[1] !== "include");
+					for (const name of words$1(await this.expand(include[2]))) await this.load(name, name, include[1] !== "include");
 					current = void 0;
 					continue;
 				}
 				if (/^(un)?export$/.test(trimmed)) continue;
 				const exporting = trimmed.match(/^(un)?export\s+(.*)$/);
 				if (exporting && !/(^|[^:+?!])=|:=|\+=|\?=|!=/.test(exporting[2])) {
-					for (const name of words(await this.expand(exporting[2]))) {
+					for (const name of words$1(await this.expand(exporting[2]))) {
 						const existing = this.variables.get(name);
 						if (exporting[1]) {
 							if (existing) existing.exported = false;
@@ -19399,7 +19610,7 @@ var NanocodeBash = (function(exports) {
 				inline = original.slice(semicolon + 1).replace(/^\s+/, "");
 				rest = rest.slice(0, rest.indexOf(";"));
 			}
-			const targets = words(await this.expand(targetText));
+			const targets = words$1(await this.expand(targetText));
 			const recipe = inline !== void 0 ? [{
 				text: inline,
 				file,
@@ -19423,8 +19634,8 @@ var NanocodeBash = (function(exports) {
 				rest = rest.slice(second + 1);
 			}
 			const [normal, order = ""] = (await this.expand(rest)).split("|");
-			const prerequisites = words(normal);
-			const orderOnly = words(order);
+			const prerequisites = words$1(normal);
+			const orderOnly = words$1(order);
 			for (const target of targets) {
 				if (target === ".PHONY") {
 					for (const name of prerequisites) this.phony.add(name);
@@ -20347,7 +20558,7 @@ var NanocodeBash = (function(exports) {
 		return new Uint8Array(await new Response(output).arrayBuffer());
 	}
 	const gzip = (data) => transform(data, new CompressionStream("gzip"));
-	const gunzip = (data) => transform(data, new DecompressionStream("gzip"));
+	const gunzip$1 = (data) => transform(data, new DecompressionStream("gzip"));
 	function header(name, size, mode, mtime, type, linkname = "") {
 		const block = /* @__PURE__ */ new Uint8Array(512);
 		const put = (offset, length, text) => block.set(encode(text).slice(0, length), offset);
@@ -20600,7 +20811,7 @@ var NanocodeBash = (function(exports) {
 				let header = false;
 				for (const operand of parsed.operands.length ? parsed.operands : ["-"]) try {
 					const input = await bytesOf(ctx, operand);
-					const output = await gunzip(input);
+					const output = await gunzip$1(input);
 					if (parsed.flags.has("t")) continue;
 					if (!header) ctx.stdout.write("         compressed        uncompressed  ratio uncompressed_name\n");
 					header = true;
@@ -20614,7 +20825,7 @@ var NanocodeBash = (function(exports) {
 			}
 			for (const operand of parsed.operands.length ? parsed.operands : ["-"]) try {
 				const input = await bytesOf(ctx, operand);
-				const output = decompress ? await gunzip(input) : await gzip(input);
+				const output = decompress ? await gunzip$1(input) : await gzip(input);
 				if (stdout || operand === "-") {
 					ctx.stdout.write(decode(output));
 					continue;
@@ -20632,7 +20843,7 @@ var NanocodeBash = (function(exports) {
 		};
 	}
 	const collected = /* @__PURE__ */ new WeakMap();
-	async function collect$1(ctx, root, operand, entries) {
+	async function collect(ctx, root, operand, entries) {
 		const path = ctx.resolve(root === "." ? operand : root + "/" + operand);
 		const stat = await lstatOf(ctx, path);
 		if (!stat) throw new CommandError(operand + ": Cannot stat: No such file or directory");
@@ -20670,7 +20881,7 @@ var NanocodeBash = (function(exports) {
 			mtime: stat.mtime,
 			linkname: ""
 		});
-		for (const child of await ctx.fs.list(path)) await collect$1(ctx, root, (name === "/" ? "" : name) + "/" + child, entries);
+		for (const child of await ctx.fs.list(path)) await collect(ctx, root, (name === "/" ? "" : name) + "/" + child, entries);
 	}
 	const cmp = async (ctx) => {
 		const parsed = options(ctx.args, {
@@ -20967,7 +21178,7 @@ var NanocodeBash = (function(exports) {
 			let entries = [];
 			if (mode[0] !== "c" && file !== "-") {
 				const old = await ctx.fs.read(ctx.resolve(file)).catch(() => void 0);
-				if (old) entries = unpack(old[0] === 31 && old[1] === 139 ? await gunzip(old) : old);
+				if (old) entries = unpack(old[0] === 31 && old[1] === 139 ? await gunzip$1(old) : old);
 			}
 			const added = [];
 			let missing = false;
@@ -20979,7 +21190,7 @@ var NanocodeBash = (function(exports) {
 				else if (arg.startsWith("--directory=")) current = arg.slice(12);
 				else if (arg === operands[index]) {
 					try {
-						await collect$1(ctx, current, operands[index], added);
+						await collect(ctx, current, operands[index], added);
 					} catch (error) {
 						if (!(error instanceof CommandError)) throw error;
 						ctx.stderr.write("tar: " + error.message + "\n");
@@ -20989,7 +21200,7 @@ var NanocodeBash = (function(exports) {
 				}
 			}
 			for (; index < operands.length; index++) try {
-				await collect$1(ctx, root, operands[index], added);
+				await collect(ctx, root, operands[index], added);
 			} catch (error) {
 				if (!(error instanceof CommandError)) throw error;
 				ctx.stderr.write("tar: " + error.message + "\n");
@@ -22715,7 +22926,7 @@ zstd: *.zst, *.zstd
 			let output = "";
 			const prefix = named && !heading ? display ?? "<stdin>" : void 0;
 			if (heading) state.printed = false;
-			const matches = scan$1(text, {
+			const matches = scan(text, {
 				regex,
 				require,
 				invert: f.has("v"),
@@ -24874,7 +25085,7 @@ zstd: *.zst, *.zstd
 		}
 		return 0;
 	};
-	const install = async (ctx) => {
+	const install$1 = async (ctx) => {
 		const parsed = options(ctx.args, {
 			flags: "dDcCpsvTb",
 			values: "mtgoS",
@@ -24975,7 +25186,7 @@ zstd: *.zst, *.zstd
 		hexdump,
 		iconv,
 		id,
-		install,
+		install: install$1,
 		join: join$3,
 		kill,
 		ln,
@@ -26333,9 +26544,9 @@ zstd: *.zst, *.zstd
 		if (typeof data?.commit?.message === "string") out.message = data.commit.message;
 		return out;
 	}
-	async function removeTree$1(fs, path) {
+	async function removeTree$2(fs, path) {
 		const stat = await fs.stat(path);
-		if (stat?.kind === "directory") for (const name of await fs.list(path)) await removeTree$1(fs, (path === "/" ? "" : path) + "/" + name);
+		if (stat?.kind === "directory") for (const name of await fs.list(path)) await removeTree$2(fs, (path === "/" ? "" : path) + "/" + name);
 		if (stat) await fs.remove(path);
 	}
 	async function clone(ctx, github$1, args) {
@@ -26422,8 +26633,8 @@ zstd: *.zst, *.zstd
 			pinned = void 0;
 		};
 		const clear = async () => {
-			if (created) await removeTree$1(ctx.fs, target).catch(() => {});
-			else for (const name of await ctx.fs.list(target).catch(() => [])) await removeTree$1(ctx.fs, target + "/" + name).catch(() => {});
+			if (created) await removeTree$2(ctx.fs, target).catch(() => {});
+			else for (const name of await ctx.fs.list(target).catch(() => [])) await removeTree$2(ctx.fs, target + "/" + name).catch(() => {});
 		};
 		const fetcher = wrap(ctx.fetch, { token: github$1.token });
 		const url = github$1.pack?.(owner, name);
@@ -26491,7 +26702,7 @@ zstd: *.zst, *.zstd
 							continue;
 						}
 						if (item.path.split("/").some((part) => part === ".." || part === "." || part === "" || part === ".git")) throw new CommandError("fatal: repository tree contains an unsafe path: " + item.path, 128);
-						const reason = item.kind === "filtered" ? "larger than " + size$1(maxFileBytes$1) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + item.data.length > maxBytes$1 ? "past the " + size$1(maxBytes$1) + " limit" : void 0;
+						const reason = item.kind === "filtered" ? "larger than " + size$2(maxFileBytes$1) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + item.data.length > maxBytes$1 ? "past the " + size$2(maxBytes$1) + " limit" : void 0;
 						if (reason) {
 							omitted.push({
 								path: item.path,
@@ -26553,7 +26764,7 @@ zstd: *.zst, *.zstd
 								skipped++;
 								continue;
 							}
-							const reason = entry.omitted !== void 0 ? "larger than " + size$1(maxFileBytes$1) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + entry.data.length > maxBytes$1 ? "past the " + size$1(maxBytes$1) + " limit" : void 0;
+							const reason = entry.omitted !== void 0 ? "larger than " + size$2(maxFileBytes$1) : count >= maxFiles ? "past the " + maxFiles + "-file limit" : written + entry.data.length > maxBytes$1 ? "past the " + size$2(maxBytes$1) + " limit" : void 0;
 							if (reason) {
 								omitted.push({
 									path: relative,
@@ -26620,7 +26831,7 @@ zstd: *.zst, *.zstd
 				if (!ctx.signal.aborted && lost(error)) {
 					const reason = error instanceof Error ? error.message.replace(/\.$/, "") : String(error);
 					if (attempt < ATTEMPTS) {
-						if (!options.quiet) ctx.stderr.write("warning: the download of " + options.repository + (bytes ? " broke off after " + size$1(bytes) : " did not start") + " (" + reason + "); retrying\n");
+						if (!options.quiet) ctx.stderr.write("warning: the download of " + options.repository + (bytes ? " broke off after " + size$2(bytes) : " did not start") + " (" + reason + "); retrying\n");
 						continue;
 					}
 					throw new CommandError("fatal: could not download https://github.com/" + options.repository + " at " + ref + ": " + reason + " (2 attempts); try again later, clone with -b <tag> for a smaller ref, or fetch single files with curl", 128);
@@ -26664,14 +26875,14 @@ zstd: *.zst, *.zstd
 		if (omitted.length) {
 			const raw = "https://raw.githubusercontent.com/" + options.repository + "/" + (snapshot.commit ?? ref) + "/";
 			const known = omitted.every((item) => item.bytes !== void 0);
-			ctx.stderr.write("warning: left out " + omitted.length + " file" + (omitted.length === 1 ? "" : "s") + (known ? " (" + size$1(omitted.reduce((total, item) => total + (item.bytes ?? 0), 0)) + ")" : "") + "; fetch one with curl -sLO " + raw + "PATH\n");
-			for (const item of omitted.slice(0, 10)) ctx.stderr.write("  " + item.path + " (" + (item.bytes === void 0 ? "" : size$1(item.bytes) + ", ") + item.reason + ")\n");
+			ctx.stderr.write("warning: left out " + omitted.length + " file" + (omitted.length === 1 ? "" : "s") + (known ? " (" + size$2(omitted.reduce((total, item) => total + (item.bytes ?? 0), 0)) + ")" : "") + "; fetch one with curl -sLO " + raw + "PATH\n");
+			for (const item of omitted.slice(0, 10)) ctx.stderr.write("  " + item.path + " (" + (item.bytes === void 0 ? "" : size$2(item.bytes) + ", ") + item.reason + ")\n");
 			if (omitted.length > 10) ctx.stderr.write("  ... and " + (omitted.length - 10) + " more, listed in .git/nanocode.json\n");
 		}
-		if (!options.quiet) ctx.stderr.write("Downloaded " + count + " files (" + size$1(written) + ") from " + options.repository + " at " + (snapshot.commit ? snapshot.commit.slice(0, 7) : ref) + ": a source snapshot without history" + (skipped ? "; skipped " + skipped + " symbolic link" + (skipped === 1 ? "" : "s") : "") + (submodules ? "; skipped " + submodules + " submodule" + (submodules === 1 ? "" : "s") : "") + ".\n");
+		if (!options.quiet) ctx.stderr.write("Downloaded " + count + " files (" + size$2(written) + ") from " + options.repository + " at " + (snapshot.commit ? snapshot.commit.slice(0, 7) : ref) + ": a source snapshot without history" + (skipped ? "; skipped " + skipped + " symbolic link" + (skipped === 1 ? "" : "s") : "") + (submodules ? "; skipped " + submodules + " submodule" + (submodules === 1 ? "" : "s") : "") + ".\n");
 		return 0;
 	}
-	function size$1(bytes) {
+	function size$2(bytes) {
 		return bytes < 1048576 ? (bytes / 1024).toFixed(1) + " KiB" : (bytes / 1024 / 1024).toFixed(2) + " MiB";
 	}
 	async function locate(ctx) {
@@ -26700,7 +26911,7 @@ zstd: *.zst, *.zstd
 		}
 	}
 	function relativeTo(ctx, root, path) {
-		const absolute = normalize(root + "/" + path);
+		const absolute = normalize$1(root + "/" + path);
 		const base = ctx.cwd === "/" ? "/" : ctx.cwd + "/";
 		if (absolute.startsWith(base)) return absolute.slice(base.length);
 		const up = ctx.cwd.split("/").filter(Boolean);
@@ -26881,6 +27092,18 @@ zstd: *.zst, *.zstd
 			return absolute === root ? "" : absolute.startsWith(root + "/") ? absolute.slice(root.length + 1) : null;
 		});
 		return (path) => prefixes.some((prefix) => prefix !== null && (prefix === "" || path === prefix || path.startsWith(prefix + "/")));
+	}
+	function pathspecs(ctx, root, specs) {
+		if (!specs.length) return () => true;
+		const tests = specs.map((spec) => {
+			const absolute = ctx.resolve(spec);
+			const relative = absolute === root ? "" : absolute.startsWith(root + "/") ? absolute.slice(root.length + 1) : null;
+			if (relative === null) return () => false;
+			if (!/[*?[]/.test(relative)) return (path) => relative === "" || path === relative || path.startsWith(relative + "/");
+			const pattern = new RegExp("^" + relative.replace(/\[[^\]]*\]|[*?]|[.+^$(){}|\\]/g, (part) => part === "*" ? ".*" : part === "?" ? "." : part.startsWith("[") ? part : "\\" + part) + "(/|$)");
+			return (path) => pattern.test(path);
+		});
+		return (path) => tests.some((test) => test(path));
 	}
 	function splitPaths(args) {
 		const separator = args.indexOf("--");
@@ -27469,11 +27692,14 @@ zstd: *.zst, *.zstd
 		}
 		return 0;
 	}
-	async function gitLsFiles(ctx) {
+	async function gitLsFiles(ctx, args) {
 		const repo = await open(ctx);
+		const separator = args.indexOf("--");
+		const specs = [...(separator < 0 ? args : args.slice(0, separator)).filter((arg) => !arg.startsWith("-")), ...separator < 0 ? [] : args.slice(separator + 1)];
+		const inScope = pathspecs(ctx, repo.root, specs);
 		const tree = indexTree(repo, treeAt(repo, repo.local.head));
 		const base = ctx.cwd === repo.root ? "" : ctx.cwd.startsWith(repo.root + "/") ? ctx.cwd.slice(repo.root.length + 1) + "/" : null;
-		for (const path of [...tree.keys()].sort()) if (base === null || path.startsWith(base)) ctx.stdout.write(relativeTo(ctx, repo.root, path) + "\n");
+		for (const path of [...tree.keys()].sort()) if ((base === null || path.startsWith(base)) && inScope(path)) ctx.stdout.write(relativeTo(ctx, repo.root, path) + "\n");
 		return 0;
 	}
 	async function gitConfig(ctx, args) {
@@ -27523,7 +27749,7 @@ zstd: *.zst, *.zstd
 			ctx = {
 				...ctx,
 				cwd,
-				resolve: (path) => normalize(path.startsWith("/") ? path : cwd + "/" + path)
+				resolve: (path) => normalize$1(path.startsWith("/") ? path : cwd + "/" + path)
 			};
 			i += 2;
 		} else if (args[i] === "-c") i += 2;
@@ -27566,7 +27792,7 @@ zstd: *.zst, *.zstd
 				ctx.stdout.write(snapshot.commit.slice(0, 7) + "\n");
 				return 0;
 			}
-			case "ls-files": return gitLsFiles(ctx);
+			case "ls-files": return gitLsFiles(ctx, rest);
 			case void 0:
 			case "help":
 			case "--help":
@@ -28811,7 +29037,7 @@ zstd: *.zst, *.zstd
 		"array",
 		"object"
 	];
-	function compare(a, b) {
+	function compare$1(a, b) {
 		const ta = typeOf(a);
 		const tb = typeOf(b);
 		if (ta !== tb) {
@@ -28829,7 +29055,7 @@ zstd: *.zst, *.zstd
 			const x = a;
 			const y = b;
 			for (let i = 0; i < Math.min(x.length, y.length); i++) {
-				const result = compare(x[i], y[i]);
+				const result = compare$1(x[i], y[i]);
 				if (result) return result;
 			}
 			return x.length - y.length;
@@ -28838,10 +29064,10 @@ zstd: *.zst, *.zstd
 		const x = a;
 		const y = b;
 		const kx = Object.keys(x).sort();
-		const keys = compare(kx, Object.keys(y).sort());
+		const keys = compare$1(kx, Object.keys(y).sort());
 		if (keys) return keys;
 		for (const key of kx) {
-			const result = compare(x[key], y[key]);
+			const result = compare$1(x[key], y[key]);
 			if (result) return result;
 		}
 		return 0;
@@ -28878,7 +29104,7 @@ zstd: *.zst, *.zstd
 			case "+": return add(a, b);
 			case "-":
 				if (typeof a === "number" && typeof b === "number") return a - b;
-				if (Array.isArray(a) && Array.isArray(b)) return a.filter((item) => !b.some((other) => compare(item, other) === 0));
+				if (Array.isArray(a) && Array.isArray(b)) return a.filter((item) => !b.some((other) => compare$1(item, other) === 0));
 				throw new JqError(describe(a) + " and " + describe(b) + " cannot be subtracted");
 			case "*":
 				if (typeof a === "number" && typeof b === "number") return a * b;
@@ -28899,12 +29125,12 @@ zstd: *.zst, *.zstd
 					return Math.trunc(a) % Math.trunc(b);
 				}
 				throw new JqError(describe(a) + " and " + describe(b) + " cannot be divided");
-			case "==": return compare(a, b) === 0;
-			case "!=": return compare(a, b) !== 0;
-			case "<": return compare(a, b) < 0;
-			case "<=": return compare(a, b) <= 0;
-			case ">": return compare(a, b) > 0;
-			case ">=": return compare(a, b) >= 0;
+			case "==": return compare$1(a, b) === 0;
+			case "!=": return compare$1(a, b) !== 0;
+			case "<": return compare$1(a, b) < 0;
+			case "<=": return compare$1(a, b) <= 0;
+			case ">": return compare$1(a, b) > 0;
+			case ">=": return compare$1(a, b) >= 0;
 		}
 		throw new JqError("unknown operator " + op);
 	}
@@ -28912,7 +29138,7 @@ zstd: *.zst, *.zstd
 		if (a === "") return [];
 		return b === "" ? [...a] : a.split(b);
 	}
-	function index(value, key) {
+	function index$1(value, key) {
 		if (value === null) return null;
 		if (typeof key === "object") {
 			if (typeof value === "string" || Array.isArray(value)) {
@@ -28960,7 +29186,7 @@ zstd: *.zst, *.zstd
 		return array;
 	}
 	function deletePaths(root, paths) {
-		const sorted = [...paths].sort((a, b) => compare(b, a));
+		const sorted = [...paths].sort((a, b) => compare$1(b, a));
 		let result = root;
 		for (const path of sorted) result = deletePath(result, path);
 		return result;
@@ -28970,7 +29196,7 @@ zstd: *.zst, *.zstd
 		if (root === null) return null;
 		const [key, ...rest] = path;
 		if (rest.length) {
-			const child = index(root, key);
+			const child = index$1(root, key);
 			if (child === null) return root;
 			return setPath(root, [key], deletePath(child, rest));
 		}
@@ -28999,7 +29225,7 @@ zstd: *.zst, *.zstd
 	}
 	function* allPaths(value, path) {
 		yield [path, value];
-		if (Array.isArray(value) || typeOf(value) === "object") for (const key of keysOf(value)) yield* allPaths(index(value, key), [...path, key]);
+		if (Array.isArray(value) || typeOf(value) === "object") for (const key of keysOf(value)) yield* allPaths(index$1(value, key), [...path, key]);
 	}
 	function toJson(value, indent = 0, sortKeys = false) {
 		const sorter = (v) => {
@@ -29073,7 +29299,7 @@ zstd: *.zst, *.zstd
 			global
 		};
 	}
-	function matches(input, re, flags, forceGlobal = false) {
+	function matches$1(input, re, flags, forceGlobal = false) {
 		if (typeof input !== "string") throw new JqError(describe(input) + " cannot be matched, as it is not a string");
 		if (typeof re !== "string") throw new JqError(describe(re) + " cannot be matched, as it is not a string");
 		const parsed = regexFlags(flags);
@@ -29158,14 +29384,14 @@ zstd: *.zst, *.zstd
 				case "index":
 					for (const key of this.eval(node.key, input, env)) for (const target of this.eval(node.target, input, env)) if (key !== null && typeof key === "object" && !Array.isArray(key)) {
 						const slice = key;
-						yield index(target, {
+						yield index$1(target, {
 							start: slice.start,
 							end: slice.end
 						});
 					} else if (Array.isArray(key)) {
 						if (!Array.isArray(target)) throw new JqError("Cannot index " + typeOf(target) + " with array");
 						const out = [];
-						for (let i = 0; i + key.length <= target.length && key.length; i++) if (key.every((item, j) => compare(item, target[i + j]) === 0)) out.push(i);
+						for (let i = 0; i + key.length <= target.length && key.length; i++) if (key.every((item, j) => compare$1(item, target[i + j]) === 0)) out.push(i);
 						yield out;
 					} else {
 						if (typeof key !== "string" && typeof key !== "number" && key !== null) throw new JqError("Cannot index " + typeOf(target) + " with " + typeOf(key));
@@ -29174,11 +29400,11 @@ zstd: *.zst, *.zstd
 							else throw new JqError("Cannot index " + typeOf(target) + " with null");
 							continue;
 						}
-						yield index(target, key);
+						yield index$1(target, key);
 					}
 					return;
 				case "slice":
-					for (const to of node.to ? this.eval(node.to, input, env) : [null]) for (const from of node.from ? this.eval(node.from, input, env) : [null]) for (const target of this.eval(node.target, input, env)) yield index(target, {
+					for (const to of node.to ? this.eval(node.to, input, env) : [null]) for (const from of node.from ? this.eval(node.from, input, env) : [null]) for (const target of this.eval(node.target, input, env)) yield index$1(target, {
 						start: from,
 						end: to
 					});
@@ -29378,7 +29604,7 @@ zstd: *.zst, *.zstd
 				const next = [];
 				for (const scope of scopes) for (const key of this.eval(entry.key, value, scope)) {
 					if (typeof key !== "string") throw new JqError("Cannot index " + typeOf(value) + " with " + typeOf(key));
-					const field = index(value, key);
+					const field = index$1(value, key);
 					let current = scope;
 					if (entry.name) {
 						current = new Env(scope);
@@ -29406,10 +29632,10 @@ zstd: *.zst, *.zstd
 							start: key.start,
 							end: key.end
 						};
-						yield [[...path, slice], value === null ? null : index(value, slice)];
+						yield [[...path, slice], value === null ? null : index$1(value, slice)];
 					} else {
 						if (typeof key !== "string" && typeof key !== "number") throw new JqError("Cannot index " + typeOf(value) + " with " + typeOf(key));
-						yield [[...path, key], index(value, key)];
+						yield [[...path, key], index$1(value, key)];
 					}
 					return;
 				case "slice":
@@ -29418,13 +29644,13 @@ zstd: *.zst, *.zstd
 							start: from,
 							end: to
 						};
-						yield [[...path, slice], value === null ? null : index(value, slice)];
+						yield [[...path, slice], value === null ? null : index$1(value, slice)];
 					}
 					return;
 				case "iterate":
 					for (const [path, value] of this.paths(node.target, input, env)) {
 						if (value === null) continue;
-						for (const key of keysOf(value)) yield [[...path, key], index(value, key)];
+						for (const key of keysOf(value)) yield [[...path, key], index$1(value, key)];
 					}
 					return;
 				case "pipe":
@@ -29525,11 +29751,11 @@ zstd: *.zst, *.zstd
 						return;
 					}
 					if (name === "first" && !args.length) {
-						yield [[0], index(input, 0)];
+						yield [[0], index$1(input, 0)];
 						return;
 					}
 					if (name === "last" && !args.length) {
-						yield [[-1], index(input, -1)];
+						yield [[-1], index$1(input, -1)];
 						return;
 					}
 					if (name === "limit" && args.length === 2) {
@@ -29547,7 +29773,7 @@ zstd: *.zst, *.zstd
 						for (const path of this.eval(args[0], input, env)) {
 							if (!Array.isArray(path)) throw new JqError("Path must be specified as an array");
 							let value = input;
-							for (const key of path) value = value === null ? null : index(value, key);
+							for (const key of path) value = value === null ? null : index$1(value, key);
 							yield [path, value];
 						}
 						return;
@@ -29574,7 +29800,7 @@ zstd: *.zst, *.zstd
 				let result = input;
 				for (const [path] of [...this.paths(node.left, input, env)]) {
 					let current = result;
-					for (const key of path) current = current === null ? null : index(current, key);
+					for (const key of path) current = current === null ? null : index$1(current, key);
 					const first = this.eval(node.right, current, env).next();
 					result = first.done ? deletePaths(result, [path]) : setPath(result, path, first.value);
 				}
@@ -29586,7 +29812,7 @@ zstd: *.zst, *.zstd
 				for (const [path] of [...this.paths(node.left, input, env)]) if (node.op === "=") result = setPath(result, path, value);
 				else {
 					let current = result;
-					for (const key of path) current = current === null ? null : index(current, key);
+					for (const key of path) current = current === null ? null : index$1(current, key);
 					const op = node.op.slice(0, -1);
 					result = setPath(result, path, op === "//" ? truthy(current) ? current : value : binop(op, current, value));
 				}
@@ -29718,7 +29944,7 @@ zstd: *.zst, *.zstd
 					for (const path of one(0)) {
 						if (!Array.isArray(path)) throw new JqError("Path must be specified as an array");
 						let value = input;
-						for (const k of path) value = value === null ? null : index(value, k);
+						for (const k of path) value = value === null ? null : index$1(value, k);
 						yield value;
 					}
 					return;
@@ -29825,7 +30051,7 @@ zstd: *.zst, *.zstd
 				case "fabs/0":
 				case "abs/0":
 					if (typeof input === "number") yield Math.abs(input);
-					else if (compare(input, 0) < 0) throw new JqError(describe(input) + " cannot be negated");
+					else if (compare$1(input, 0) < 0) throw new JqError(describe(input) + " cannot be negated");
 					else yield input;
 					return;
 				case "sqrt/0":
@@ -29882,7 +30108,7 @@ zstd: *.zst, *.zstd
 					return;
 				case "sort/0":
 					if (!Array.isArray(input)) throw new JqError(describe(input) + " cannot be sorted, as it is not an array");
-					yield [...input].sort(compare);
+					yield [...input].sort(compare$1);
 					return;
 				case "sort_by/1":
 				case "group_by/1":
@@ -29895,15 +30121,15 @@ zstd: *.zst, *.zstd
 						key: [...this.eval(args[0], item, env)],
 						i
 					}));
-					keyed.sort((a, b) => compare(a.key, b.key) || a.i - b.i);
+					keyed.sort((a, b) => compare$1(a.key, b.key) || a.i - b.i);
 					if (name === "sort_by") yield keyed.map((entry) => entry.item);
 					else if (name === "min_by") yield keyed[0]?.item ?? null;
-					else if (name === "max_by") yield keyed.length ? keyed.reduce((best, entry) => compare(entry.key, best.key) >= 0 ? entry : best).item : null;
+					else if (name === "max_by") yield keyed.length ? keyed.reduce((best, entry) => compare$1(entry.key, best.key) >= 0 ? entry : best).item : null;
 					else {
 						const groups = [];
 						let last;
 						for (const entry of keyed) {
-							if (last !== void 0 && compare(last, entry.key) === 0) groups[groups.length - 1].push(entry.item);
+							if (last !== void 0 && compare$1(last, entry.key) === 0) groups[groups.length - 1].push(entry.item);
 							else groups.push([entry.item]);
 							last = entry.key;
 						}
@@ -29912,13 +30138,13 @@ zstd: *.zst, *.zstd
 					return;
 				}
 				case "unique/0":
-					yield [...input].sort(compare).filter((item, i, list) => i === 0 || compare(list[i - 1], item) !== 0);
+					yield [...input].sort(compare$1).filter((item, i, list) => i === 0 || compare$1(list[i - 1], item) !== 0);
 					return;
 				case "min/0":
-					yield input.length ? [...input].sort(compare)[0] : null;
+					yield input.length ? [...input].sort(compare$1)[0] : null;
 					return;
 				case "max/0":
-					yield input.length ? [...input].sort(compare)[input.length - 1] : null;
+					yield input.length ? [...input].sort(compare$1)[input.length - 1] : null;
 					return;
 				case "reverse/0":
 					if (Array.isArray(input)) yield [...input].reverse();
@@ -29966,7 +30192,7 @@ zstd: *.zst, *.zstd
 					return;
 				case "split/2":
 					for (const flags of one(1)) for (const re of one(0)) {
-						const found = matches(input, re, flags, true);
+						const found = matches$1(input, re, flags, true);
 						const out = [];
 						let at = 0;
 						const chars = [...input];
@@ -30047,15 +30273,15 @@ zstd: *.zst, *.zstd
 					return;
 				case "test/1":
 				case "test/2":
-					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) yield matches(input, re, flags).length > 0;
+					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) yield matches$1(input, re, flags).length > 0;
 					return;
 				case "match/1":
 				case "match/2":
-					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) yield* matches(input, re, flags);
+					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) yield* matches$1(input, re, flags);
 					return;
 				case "capture/1":
 				case "capture/2":
-					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) for (const match of matches(input, re, flags)) {
+					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) for (const match of matches$1(input, re, flags)) {
 						const out = {};
 						for (const capture of match.captures) if (capture.name) out[capture.name] = capture.string;
 						yield out;
@@ -30063,7 +30289,7 @@ zstd: *.zst, *.zstd
 					return;
 				case "scan/1":
 				case "scan/2":
-					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) for (const match of matches(input, re, flags, true)) {
+					for (const flags of args.length > 1 ? one(1) : [null]) for (const re of one(0)) for (const match of matches$1(input, re, flags, true)) {
 						const captures = match.captures;
 						yield captures.length ? captures.map((capture) => capture.string) : match.string;
 					}
@@ -30086,7 +30312,7 @@ zstd: *.zst, *.zstd
 					if (typeof input !== "string") throw new JqError(describe(input) + " cannot be matched, as it is not a string");
 					const flagsList = args.length > 2 ? all(2) : [null];
 					for (const flags of flagsList) for (const re of one(0)) {
-						const found = matches(input, re, flags, name === "gsub");
+						const found = matches$1(input, re, flags, name === "gsub");
 						const results = function* (at, prefix, cursor) {
 							const chars = [...input];
 							if (at >= found.length) {
@@ -30113,10 +30339,10 @@ zstd: *.zst, *.zstd
 					yield parseOne(input);
 					return;
 				case "first/0":
-					yield index(input, 0);
+					yield index$1(input, 0);
 					return;
 				case "last/0":
-					yield index(input, -1);
+					yield index$1(input, -1);
 					return;
 				case "first/1":
 					for (const value of one(0)) {
@@ -30131,7 +30357,7 @@ zstd: *.zst, *.zstd
 					return;
 				}
 				case "nth/1":
-					for (const n of one(0)) yield index(input, n);
+					for (const n of one(0)) yield index$1(input, n);
 					return;
 				case "nth/2":
 					for (const n of one(0)) {
@@ -30291,14 +30517,14 @@ zstd: *.zst, *.zstd
 					return;
 				}
 				case "IN/1":
-					for (const value of one(0)) if (compare(value, input) === 0) {
+					for (const value of one(0)) if (compare$1(value, input) === 0) {
 						yield true;
 						return;
 					}
 					yield false;
 					return;
 				case "IN/2":
-					for (const item of one(0)) for (const value of one(1)) if (compare(value, item) === 0) {
+					for (const item of one(0)) for (const value of one(1)) if (compare$1(value, item) === 0) {
 						yield true;
 						return;
 					}
@@ -30321,7 +30547,7 @@ zstd: *.zst, *.zstd
 					let out = null;
 					for (const [path] of this.paths(args[0], input, env)) {
 						let value = input;
-						for (const k of path) value = value === null ? null : index(value, k);
+						for (const k of path) value = value === null ? null : index$1(value, k);
 						out = setPath(out, path, value);
 					}
 					yield out;
@@ -30412,7 +30638,7 @@ zstd: *.zst, *.zstd
 		if (typeof a === "string") return a.includes(b);
 		if (Array.isArray(a)) return b.every((item) => a.some((other) => typeOf(other) === typeOf(item) && contains(other, item)));
 		if (a !== null && typeof a === "object") return Object.entries(b).every(([k, v]) => k in a && typeOf(a[k]) === typeOf(v) && contains(a[k], v));
-		return compare(a, b) === 0;
+		return compare$1(a, b) === 0;
 	}
 	const USAGE = "\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs  at https://jqlang.github.io/jq";
 	function tokenName(token) {
@@ -31205,190 +31431,1119 @@ zstd: *.zst, *.zstd
 		}
 		return status;
 	};
-	// src/bash/internal/commands/pylazy.ts
-	const S_IFDIR = 16384;
-	const S_IFREG = 32768;
-	const mounted = /* @__PURE__ */ new WeakMap();
-	const WRITES = 1603;
+	// src/bash/internal/commands/journal.ts
+	init_FileSystem();
+	init_Fs();
+	function create$1(base, options) {
+		let log = [];
+		let seen = /* @__PURE__ */ new Set();
+		let changed = [];
+		let held = 0;
+		let full = false;
+		const snapshot = (path, into) => {
+			const found = kindOf(base, path);
+			if (!found) return into.push([path, null]);
+			if (found.kind === "symlink") {
+				into.push([path, {
+					kind: "symlink",
+					target: base.readlink?.(path) ?? ""
+				}]);
+				return;
+			}
+			if (found.kind === "file") {
+				const data = base.read(path);
+				held += data.length;
+				into.push([path, {
+					kind: "file",
+					data,
+					mode: found.mode
+				}]);
+				return;
+			}
+			into.push([path, { kind: "directory" }]);
+			for (const name of base.list(path)) snapshot(join$2(path, name), into);
+		};
+		const record = (path) => {
+			changed.push(path);
+			if (full || seen.has(path)) return;
+			const taken = [];
+			snapshot(path, taken);
+			if (held > options.bytes) {
+				full = true;
+				return;
+			}
+			for (const [at] of taken) seen.add(at);
+			log.push([path, taken]);
+		};
+		const files = {
+			list: (path) => base.list(path),
+			mkdir: (path) => {
+				record(path);
+				base.mkdir(path);
+			},
+			read: (path) => base.read(path),
+			remove: (path) => {
+				record(path);
+				base.remove(path);
+			},
+			rename: (from, to) => {
+				record(from);
+				record(to);
+				base.rename(from, to);
+			},
+			stat: (path) => base.stat(path),
+			write: (path, data, append) => {
+				record(path);
+				base.write(path, data, append);
+			}
+		};
+		if (base.chmod) files.chmod = (path, mode) => {
+			record(path);
+			base.chmod(path, mode);
+		};
+		if (base.utimes) files.utimes = (path, mtime) => {
+			record(path);
+			base.utimes(path, mtime);
+		};
+		if (base.symlink) files.symlink = (target, path) => {
+			record(path);
+			base.symlink(target, path);
+		};
+		if (base.lstat) files.lstat = (path) => base.lstat(path);
+		if (base.readlink) files.readlink = (path) => base.readlink(path);
+		return {
+			capture(paths) {
+				const into = [];
+				for (const path of [...new Set(paths)].sort((a, b) => depth(a) - depth(b))) snapshot(path, into);
+				return into;
+			},
+			clear() {
+				log = [];
+				seen = /* @__PURE__ */ new Set();
+				changed = [];
+				held = 0;
+				full = false;
+			},
+			files,
+			mark: () => ({
+				first: log.length,
+				changes: changed.length
+			}),
+			overflowed: () => full,
+			replay: (effects) => restore(files, effects),
+			rollback(mark) {
+				if (full) throw new FsError("ENOMEM", log[mark.first]?.[0] ?? "/");
+				changed.length = Math.min(changed.length, mark.changes);
+				for (const [, taken] of log.splice(mark.first).reverse()) {
+					restore(base, taken);
+					for (const [at] of taken) seen.delete(at);
+				}
+			},
+			touched: (mark) => [...new Set(changed.slice(mark.changes))]
+		};
+	}
+	function kindOf(fs, path) {
+		return fs.lstat ? fs.lstat(path) : fs.stat(path);
+	}
+	function erase$1(fs, path) {
+		const found = kindOf(fs, path);
+		if (!found) return;
+		if (found.kind === "directory") for (const name of fs.list(path)) erase$1(fs, join$2(path, name));
+		fs.remove(path);
+	}
+	function ensure(fs, path) {
+		if (path === "/" || fs.stat(path)?.kind === "directory") return;
+		ensure(fs, parentOf(path));
+		if (kindOf(fs, path)) erase$1(fs, path);
+		fs.mkdir(path);
+	}
+	function restore(fs, effects) {
+		for (const [path, entry] of effects) {
+			const found = kindOf(fs, path);
+			const kept = found?.kind === "directory" && entry?.kind === "directory";
+			if (found && !kept) erase$1(fs, path);
+			if (!entry || kept) continue;
+			ensure(fs, parentOf(path));
+			if (entry.kind === "directory") fs.mkdir(path);
+			else if (entry.kind === "symlink") fs.symlink?.(entry.target, path);
+			else {
+				fs.write(path, entry.data);
+				fs.chmod?.(path, entry.mode);
+			}
+		}
+	}
+	function view(files, options) {
+		const retry = options.retry;
+		const run = async (body) => {
+			for (;;) try {
+				return body();
+			} catch (error) {
+				if (!retry || !await retry()) throw error;
+			}
+		};
+		const fs = {
+			list: (path) => run(() => files.list(path)),
+			mkdir: (path) => run(() => files.mkdir(path)),
+			read: (path) => run(() => files.read(path)),
+			remove: (path) => run(() => files.remove(path)),
+			rename: (from, to) => run(() => files.rename(from, to)),
+			stat: (path) => run(() => files.stat(path)),
+			write: (path, data, append) => run(() => files.write(path, data, append))
+		};
+		if (files.chmod) fs.chmod = (path, mode) => run(() => files.chmod(path, mode));
+		if (files.utimes) fs.utimes = (path, mtime) => run(() => files.utimes(path, mtime));
+		if (files.symlink) fs.symlink = (target, path) => run(() => files.symlink(target, path));
+		if (files.lstat) fs.lstat = (path) => run(() => files.lstat(path));
+		if (files.readlink) fs.readlink = (path) => run(() => files.readlink(path));
+		if (!retry) fs.sync = files;
+		return fs;
+	}
+	function depth(path) {
+		return path.split("/").length;
+	}
 	function join$2(base, name) {
 		return base === "/" ? "/" + name : base + "/" + name;
 	}
-	function within$2(path, dir) {
-		return path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
+	// src/bash/internal/commands/zip.ts
+	init_Shell();
+	init_FileSystem();
+	init_Fs();
+	init_Text();
+	const CRC_TABLE = (() => {
+		const table = /* @__PURE__ */ new Uint32Array(256);
+		for (let n = 0; n < 256; n++) {
+			let c = n;
+			for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+			table[n] = c >>> 0;
+		}
+		return table;
+	})();
+	function crc32(data) {
+		let crc = 4294967295;
+		for (let i = 0; i < data.length; i++) crc = CRC_TABLE[(crc ^ data[i]) & 255] ^ crc >>> 8;
+		return (crc ^ 4294967295) >>> 0;
 	}
-	function detach(pyodide) {
-		const fs = pyodide.FS;
-		fs.chdir("/");
-		for (const root of mounted.get(pyodide) ?? []) fs.unmount(root);
-		mounted.delete(pyodide);
+	const inflate = (data) => transform(data, new DecompressionStream("deflate-raw"));
+	const deflate = (data) => transform(data, new CompressionStream("deflate-raw"));
+	function dosTime(ms) {
+		const date = new Date(ms);
+		const year = Math.max(1980, date.getFullYear());
+		return [date.getHours() << 11 | date.getMinutes() << 5 | date.getSeconds() >> 1, year - 1980 << 9 | date.getMonth() + 1 << 5 | date.getDate()];
 	}
-	function attach(pyodide, files, roots) {
-		detach(pyodide);
-		const fs = pyodide.FS;
-		const codes = pyodide.ERRNO_CODES;
-		const MEMFS = fs.filesystems.MEMFS;
-		const fail = (error) => new fs.ErrnoError(codes[error.code ?? "EIO"] ?? codes["EIO"] ?? 0);
-		const fill = (node) => {
-			const host = node.lazyDir;
-			if (host === void 0) return;
-			node.lazyDir = void 0;
-			const names = (() => {
-				try {
-					return files.list(host);
-				} catch (error) {
-					throw fail(error);
+	function fromDos(time, date) {
+		return new Date((date >> 9 & 127) + 1980, (date >> 5 & 15) - 1, date & 31, time >> 11 & 31, time >> 5 & 63, (time & 31) * 2).getTime();
+	}
+	function readEntries(data) {
+		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		let end = -1;
+		for (let i = data.length - 22; i >= Math.max(0, data.length - 22 - 65535); i--) if (view.getUint32(i, true) === 101010256) {
+			end = i;
+			break;
+		}
+		if (end < 0) throw new CommandError("End-of-central-directory signature not found. Either this file is not a zipfile, or it constitutes one disk of a multi-part archive.", 9);
+		let count = view.getUint16(end + 10, true);
+		let offset = view.getUint32(end + 16, true);
+		const comment = decode(data.subarray(end + 22, end + 22 + view.getUint16(end + 20, true)));
+		if ((count === 65535 || offset === 4294967295) && end >= 20 && view.getUint32(end - 20, true) === 117853008) {
+			const record = Number(view.getBigUint64(end - 12, true));
+			if (view.getUint32(record, true) === 101075792) {
+				count = Number(view.getBigUint64(record + 32, true));
+				offset = Number(view.getBigUint64(record + 48, true));
+			}
+		}
+		const entries = [];
+		for (let i = 0; i < count; i++) {
+			if (offset + 46 > data.length || view.getUint32(offset, true) !== 33639248) throw new CommandError("bad zipfile offset (central directory)", 3);
+			const flags = view.getUint16(offset + 8, true);
+			const nameLength = view.getUint16(offset + 28, true);
+			const extraLength = view.getUint16(offset + 30, true);
+			const commentLength = view.getUint16(offset + 32, true);
+			const nameBytes = data.subarray(offset + 46, offset + 46 + nameLength);
+			const name = flags & 2048 ? decode(nameBytes) : decode(nameBytes);
+			let compressed = view.getUint32(offset + 20, true);
+			let size = view.getUint32(offset + 24, true);
+			let local = view.getUint32(offset + 42, true);
+			let extra = offset + 46 + nameLength;
+			const extraEnd = extra + extraLength;
+			while (extra + 4 <= extraEnd) {
+				const id = view.getUint16(extra, true);
+				const length = view.getUint16(extra + 2, true);
+				if (id === 1) {
+					let at = extra + 4;
+					if (size === 4294967295) {
+						size = Number(view.getBigUint64(at, true));
+						at += 8;
+					}
+					if (compressed === 4294967295) {
+						compressed = Number(view.getBigUint64(at, true));
+						at += 8;
+					}
+					if (local === 4294967295) local = Number(view.getBigUint64(at, true));
 				}
-			})();
-			const contents = node.contents;
-			for (const name of names) {
-				if (name in contents) continue;
-				const stat = files.stat(join$2(host, name));
-				if (!stat) continue;
-				const dir = stat.kind === "directory";
-				const child = MEMFS.createNode(node, name, (dir ? S_IFDIR : S_IFREG) | stat.mode & 511, 0);
-				child.atime = child.mtime = child.ctime = stat.mtime;
-				if (dir) {
-					child.lazyDir = join$2(host, name);
-					child.node_ops = ops.dir;
+				extra += 4 + length;
+			}
+			const external = view.getUint32(offset + 38, true);
+			const unixMode = view.getUint8(offset + 5) === 3 ? external >>> 16 : 0;
+			entries.push({
+				name,
+				method: view.getUint16(offset + 10, true),
+				crc: view.getUint32(offset + 16, true),
+				compressed,
+				size,
+				offset: local,
+				mtime: fromDos(view.getUint16(offset + 12, true), view.getUint16(offset + 14, true)),
+				mode: unixMode & 4095,
+				directory: name.endsWith("/") || (unixMode & 61440) === 16384 || (external & 16) !== 0,
+				comment: decode(data.subarray(extraEnd, extraEnd + commentLength))
+			});
+			if (flags & 1) entries[entries.length - 1].method = -1;
+			offset = extraEnd + commentLength;
+		}
+		return {
+			entries,
+			comment
+		};
+	}
+	async function contents(data, entry) {
+		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		if (view.getUint32(entry.offset, true) !== 67324752) throw new CommandError("bad zipfile offset (local header sig): " + entry.name, 3);
+		const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true);
+		const raw = data.subarray(start, start + entry.compressed);
+		if (entry.method === 0) return raw;
+		if (entry.method === 8) return inflate(raw);
+		if (entry.method === -1) throw new CommandError("skipping: " + entry.name + " (encrypted entries are not supported)", 81);
+		throw new CommandError("skipping: " + entry.name + " (unsupported compression method " + entry.method + ")", 81);
+	}
+	function date(ms) {
+		const d = new Date(ms);
+		const pad = (n) => String(n).padStart(2, "0");
+		return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+	}
+	function unsafe(name) {
+		return name.startsWith("/") || name.split("/").includes("..");
+	}
+	const unzip = async (ctx) => {
+		const flags = /* @__PURE__ */ new Set();
+		let dest;
+		let password = false;
+		const operands = [];
+		const excludes = [];
+		let excluding = false;
+		for (let i = 0; i < ctx.args.length; i++) {
+			const arg = ctx.args[i];
+			if (arg === "-d") {
+				dest = ctx.args[++i];
+				if (dest === void 0) throw new CommandError("error:  must specify directory to which to extract with -d option", 10);
+				continue;
+			}
+			if (arg === "-x") {
+				excluding = true;
+				continue;
+			}
+			if (arg === "-P") {
+				i++;
+				password = true;
+				continue;
+			}
+			if (arg.startsWith("-") && arg.length > 1 && !excluding) {
+				for (const c of arg.slice(1)) {
+					if (!"lvtopnqjfuCLaXKDZ".includes(c)) throw new CommandError("error: unrecognized option -" + c, 10);
+					flags.add(c);
+				}
+				continue;
+			}
+			if (arg.startsWith("-d") && arg.length > 2) {
+				dest = arg.slice(2);
+				continue;
+			}
+			(excluding ? excludes : operands).push(arg);
+		}
+		if (password) throw new CommandError("encrypted archives are not supported", 81);
+		const archive = operands.shift();
+		if (archive === void 0) {
+			ctx.stdout.write("UnZip 6.00 (nanocode-ts)\nUsage: unzip [-Z] [-opts[modifiers]] file[.zip] [list] [-x xlist] [-d exdir]\n  -p  extract files to pipe, no messages     -l  list files (short format)\n  -t  test compressed archive data           -o  overwrite files WITHOUT prompting\n  -n  never overwrite existing files         -j  junk paths (do not make directories)\n  -q  quiet mode                             -d  extract files into exdir\n");
+			return 0;
+		}
+		let path = ctx.resolve(archive);
+		let data;
+		try {
+			data = archive === "-" ? encode(ctx.stdin.read()) : await ctx.fs.read(path);
+		} catch (error) {
+			if (!(error instanceof FsError)) throw error;
+			try {
+				path = ctx.resolve(archive + ".zip");
+				data = await ctx.fs.read(path);
+			} catch {
+				ctx.stderr.write("unzip:  cannot find or open " + archive + ", " + archive + ".zip or " + archive + ".ZIP.\n");
+				return 9;
+			}
+		}
+		const { entries, comment } = readEntries(data);
+		const caseless = flags.has("C");
+		const matches = (patterns, name) => patterns.some((pattern) => globRegExp(pattern, caseless ? "i" : "").test(name));
+		const selected = entries.filter((entry) => (!operands.length || matches(operands, entry.name)) && !matches(excludes, entry.name));
+		for (const pattern of operands) if (!entries.some((entry) => matches([pattern], entry.name))) ctx.stderr.write("caution: filename not matched:  " + pattern + "\n");
+		const quiet = flags.has("q");
+		if (flags.has("Z") || flags.has("l") || flags.has("v")) {
+			if (flags.has("Z")) {
+				for (const entry of selected) ctx.stdout.write(entry.name + "\n");
+				return 0;
+			}
+			ctx.stdout.write("Archive:  " + archive + "\n");
+			if (flags.has("v")) {
+				ctx.stdout.write(" Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n--------  ------  ------- ---- ---------- ----- --------  ----\n");
+				let total = 0;
+				let packed = 0;
+				for (const entry of selected) {
+					total += entry.size;
+					packed += entry.compressed;
+					const ratio = entry.size ? Math.round((1 - entry.compressed / entry.size) * 100) : 0;
+					ctx.stdout.write(String(entry.size).padStart(8) + "  " + (entry.method === 8 ? "Defl:N" : "Stored").padEnd(6) + " " + String(entry.compressed).padStart(7) + " " + (ratio + "%").padStart(4) + " " + date(entry.mtime) + " " + entry.crc.toString(16).padStart(8, "0") + "  " + entry.name + "\n");
+				}
+				ctx.stdout.write("--------          -------  ---                            -------\n" + String(total).padStart(8) + "         " + String(packed).padStart(7) + " " + ((total ? Math.round((1 - packed / total) * 100) : 0) + "%").padStart(4) + "                            " + selected.length + " file" + (selected.length === 1 ? "" : "s") + "\n");
+				return 0;
+			}
+			ctx.stdout.write("  Length      Date    Time    Name\n---------  ---------- -----   ----\n");
+			let total = 0;
+			for (const entry of selected) {
+				total += entry.size;
+				ctx.stdout.write(String(entry.size).padStart(9) + "  " + date(entry.mtime) + "   " + entry.name + "\n");
+				await pause(ctx);
+			}
+			ctx.stdout.write("---------                     -------\n" + String(total).padStart(9) + "                     " + selected.length + " file" + (selected.length === 1 ? "" : "s") + "\n");
+			return 0;
+		}
+		if (!quiet && !flags.has("p")) ctx.stdout.write("Archive:  " + archive + "\n" + (comment ? comment + "\n" : ""));
+		let status = operands.length && !selected.length ? 11 : 0;
+		let errors = 0;
+		for (const entry of selected) {
+			if (flags.has("t")) {
+				if (entry.directory) continue;
+				const bytes = await contents(data, entry).catch(() => void 0);
+				const ok = bytes !== void 0 && crc32(bytes) === entry.crc;
+				if (!ok) errors++;
+				if (!quiet) ctx.stdout.write("    testing: " + entry.name.padEnd(23) + (ok ? "  OK" : "  bad CRC") + "\n");
+				continue;
+			}
+			if (flags.has("p")) {
+				if (entry.directory) continue;
+				ctx.stdout.write(decode(await contents(data, entry)));
+				continue;
+			}
+			if (unsafe(entry.name)) {
+				ctx.stderr.write("warning:  skipped \"../\" path component(s) in " + entry.name + "\n");
+				status = Math.max(status, 1);
+				continue;
+			}
+			const relative = flags.has("j") ? entry.name.split("/").filter(Boolean).pop() ?? "" : entry.name.replace(/\/+$/, "");
+			if (!relative || flags.has("j") && entry.directory) continue;
+			const target = ctx.resolve((dest !== void 0 ? dest.replace(/\/+$/, "") + "/" : "") + relative);
+			if (entry.directory) {
+				await mkdirs(ctx.fs, target);
+				if (!quiet) ctx.stdout.write("   creating: " + (dest !== void 0 ? dest.replace(/\/+$/, "") + "/" : "") + entry.name + "\n");
+				continue;
+			}
+			const existing = await lstatOf(ctx, target);
+			if (existing) {
+				if (flags.has("n")) continue;
+				if (flags.has("u") && existing.mtime >= entry.mtime) continue;
+				if (!flags.has("o") && !flags.has("f") && !flags.has("u")) {
+					ctx.stderr.write("replace " + relative + "? [y]es, [n]o, [A]ll, [N]one, [r]ename: NULL\n(EOF or read error, treating as \"[N]one\" ...)\n");
+					status = Math.max(status, 1);
+					break;
+				}
+			}
+			let bytes;
+			try {
+				bytes = await contents(data, entry);
+			} catch (error) {
+				if (!(error instanceof CommandError)) throw error;
+				ctx.stderr.write(error.message + "\n");
+				status = Math.max(status, 1);
+				continue;
+			}
+			if (crc32(bytes) !== entry.crc) {
+				ctx.stderr.write(relative + "  bad CRC " + crc32(bytes).toString(16).padStart(8, "0") + "  (should be " + entry.crc.toString(16).padStart(8, "0") + ")\n");
+				status = Math.max(status, 2);
+			}
+			await mkdirs(ctx.fs, parentOf(target));
+			await ctx.fs.write(target, bytes);
+			if (entry.mode && ctx.fs.chmod) await ctx.fs.chmod(target, entry.mode & 511);
+			if (!quiet) ctx.stdout.write("  inflating: " + (dest !== void 0 ? dest.replace(/\/+$/, "") + "/" : "") + relative + "\n");
+			await pause(ctx);
+		}
+		if (flags.has("t")) {
+			if (errors) {
+				ctx.stdout.write("At least one error was detected in " + archive + ".\n");
+				return 2;
+			}
+			if (!quiet) ctx.stdout.write("No errors detected in compressed data of " + archive + ".\n");
+			else ctx.stdout.write("No errors detected in compressed data of " + archive + ".\n");
+		}
+		return status;
+	};
+	async function gather(ctx, operand, recurse, junk, out, excluded) {
+		const path = ctx.resolve(operand);
+		const stat = await ctx.fs.stat(path);
+		if (!stat) return false;
+		const name = (junk ? operand.split("/").filter(Boolean).pop() ?? operand : operand.replace(/^(\.\/)+/, "").replace(/^\/+/, "")).replace(/\/+$/, "");
+		if (stat.kind === "file") {
+			if (!excluded(name)) out.push({
+				name,
+				data: await ctx.fs.read(path),
+				mtime: stat.mtime,
+				mode: stat.mode
+			});
+			return true;
+		}
+		if (!junk && name && name !== "." && !excluded(name + "/")) out.push({
+			name: name + "/",
+			data: void 0,
+			mtime: stat.mtime,
+			mode: stat.mode
+		});
+		if (!recurse) return true;
+		for (const child of await ctx.fs.list(path)) await gather(ctx, (operand.replace(/\/+$/, "") || "/") + "/" + child, recurse, junk, out, excluded);
+		return true;
+	}
+	const zip = async (ctx) => {
+		const flags = /* @__PURE__ */ new Set();
+		const excludes = [];
+		const operands = [];
+		let level = 6;
+		let mode;
+		for (let i = 0; i < ctx.args.length; i++) {
+			const arg = ctx.args[i];
+			if (arg === "-x" || arg === "--exclude") {
+				mode = "x";
+				continue;
+			}
+			if (arg === "-r" || arg === "--recurse-paths") {
+				flags.add("r");
+				continue;
+			}
+			if (arg.startsWith("--")) {
+				if (arg === "--quiet") flags.add("q");
+				else if (arg === "--junk-paths") flags.add("j");
+				else if (arg === "--delete") flags.add("d");
+				continue;
+			}
+			if (arg.startsWith("-") && arg.length > 1 && mode !== "x") {
+				for (const c of arg.slice(1)) if (/[0-9]/.test(c)) level = Number(c);
+				else if ("rqjdmuvXyDTlAoFS@".includes(c)) flags.add(c);
+				else throw new CommandError("zip error: Invalid command arguments (short option '" + c + "' not supported)", 16);
+				continue;
+			}
+			if (mode === "x") excludes.push(arg);
+			else operands.push(arg);
+		}
+		let archive = operands.shift();
+		if (archive === void 0) {
+			ctx.stdout.write("Zip 3.0 (nanocode-ts)\nUsage: zip [-options] [-b path] [-t mmddyyyy] [-n suffixes] [zipfile list] [-xi list]\n  -r   recurse into directories   -j   junk (don't record) directory names\n  -0   store only                 -9   compress better\n  -q   quiet operation            -d   delete entries in zipfile\n  -x   exclude the following names\n");
+			return 0;
+		}
+		if (archive !== "-" && !/\.[^/]*$/.test(archive.split("/").pop() ?? "")) archive += ".zip";
+		const path = ctx.resolve(archive);
+		const quiet = flags.has("q");
+		const excluded = (name) => excludes.some((pattern) => globRegExp(pattern).test(name) || globRegExp(pattern).test(name.replace(/\/$/, "")));
+		const existing = /* @__PURE__ */ new Map();
+		if (archive !== "-") {
+			const old = await ctx.fs.read(path).catch(() => void 0);
+			if (old?.length) {
+				const { entries } = readEntries(old);
+				for (const entry of entries) {
+					const view = new DataView(old.buffer, old.byteOffset, old.byteLength);
+					const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true);
+					existing.set(entry.name, {
+						name: entry.name,
+						data: void 0,
+						mtime: entry.mtime,
+						mode: entry.mode,
+						raw: old.slice(start, start + entry.compressed),
+						method: entry.method,
+						crc: entry.crc,
+						size: entry.size
+					});
+				}
+			}
+		}
+		if (flags.has("d")) {
+			let deleted = 0;
+			for (const name of [...existing.keys()]) if (operands.some((pattern) => globRegExp(pattern).test(name))) {
+				existing.delete(name);
+				deleted++;
+				if (!quiet) ctx.stdout.write("deleting: " + name + "\n");
+			}
+			if (!deleted) {
+				ctx.stderr.write("zip warning: name not matched: " + operands.join(" ") + "\n");
+				return 12;
+			}
+		} else {
+			const added = [];
+			let missing = 0;
+			for (const operand of operands) {
+				if (operand === "-@") continue;
+				if (!await gather(ctx, operand, flags.has("r"), flags.has("j"), added, excluded)) {
+					ctx.stderr.write("	zip warning: name not matched: " + operand + "\n");
+					missing++;
+				}
+			}
+			if (!added.length && !existing.size) {
+				ctx.stderr.write("\nzip error: Nothing to do! (" + archive + ")\n");
+				return 12;
+			}
+			for (const entry of added) {
+				const replaced = existing.has(entry.name);
+				existing.set(entry.name, entry);
+				if (!quiet) ctx.stdout.write((replaced ? "updating: " : "  adding: ") + entry.name + (entry.data === void 0 ? " (stored 0%)" : "") + "\n");
+			}
+			if (missing && !added.length) return 12;
+		}
+		const chunks = [];
+		const central = [];
+		let offset = 0;
+		for (const entry of existing.values()) {
+			const name = encode(entry.name);
+			let method;
+			let crc;
+			let size;
+			let body;
+			if ("raw" in entry && entry.raw !== void 0 && entry.data === void 0) {
+				method = entry.method ?? 0;
+				crc = entry.crc ?? 0;
+				size = entry.size ?? 0;
+				body = entry.raw;
+			} else {
+				const data = entry.data ?? /* @__PURE__ */ new Uint8Array();
+				crc = crc32(data);
+				size = data.length;
+				const packed = level > 0 && data.length ? await deflate(data) : data;
+				method = packed.length < data.length ? 8 : 0;
+				body = method === 8 ? packed : data;
+			}
+			if (offset > 4294967295 || body.length > 4294967295) throw new CommandError("zip error: archives larger than 4 GiB are not supported", 16);
+			const [time, day] = dosTime(entry.mtime);
+			const local = new Uint8Array(30 + name.length);
+			const lv = new DataView(local.buffer);
+			lv.setUint32(0, 67324752, true);
+			lv.setUint16(4, 20, true);
+			lv.setUint16(6, 2048, true);
+			lv.setUint16(8, method, true);
+			lv.setUint16(10, time, true);
+			lv.setUint16(12, day, true);
+			lv.setUint32(14, crc, true);
+			lv.setUint32(18, body.length, true);
+			lv.setUint32(22, size, true);
+			lv.setUint16(26, name.length, true);
+			local.set(name, 30);
+			const record = new Uint8Array(46 + name.length);
+			const cv = new DataView(record.buffer);
+			const directory = entry.name.endsWith("/");
+			cv.setUint32(0, 33639248, true);
+			cv.setUint16(4, 798, true);
+			cv.setUint16(6, 20, true);
+			cv.setUint16(8, 2048, true);
+			cv.setUint16(10, method, true);
+			cv.setUint16(12, time, true);
+			cv.setUint16(14, day, true);
+			cv.setUint32(16, crc, true);
+			cv.setUint32(20, body.length, true);
+			cv.setUint32(24, size, true);
+			cv.setUint16(28, name.length, true);
+			cv.setUint32(38, (((directory ? 16384 : 32768) | (entry.mode || (directory ? 493 : 420))) << 16 | (directory ? 16 : 0)) >>> 0, true);
+			cv.setUint32(42, offset, true);
+			record.set(name, 46);
+			chunks.push(local, body);
+			central.push(record);
+			offset += local.length + body.length;
+		}
+		const centralSize = central.reduce((total, part) => total + part.length, 0);
+		const end = /* @__PURE__ */ new Uint8Array(22);
+		const ev = new DataView(end.buffer);
+		ev.setUint32(0, 101010256, true);
+		ev.setUint16(8, central.length, true);
+		ev.setUint16(10, central.length, true);
+		ev.setUint32(12, centralSize, true);
+		ev.setUint32(16, offset, true);
+		const total = new Uint8Array(offset + centralSize + 22);
+		let at = 0;
+		for (const part of [
+			...chunks,
+			...central,
+			end
+		]) {
+			total.set(part, at);
+			at += part.length;
+		}
+		if (archive === "-") ctx.stdout.write(decode(total));
+		else await ctx.fs.write(path, total);
+		return 0;
+	};
+	// src/bash/internal/commands/pip.ts
+	init_Shell();
+	init_FileSystem();
+	init_Fs();
+	const sitePackages = "/usr/local/lib/python3.14/site-packages";
+	const index = "https://pypi.org/pypi/";
+	const shippedModules = Object.values({
+		contourpy: "contourpy",
+		kiwisolver: "kiwisolver",
+		markupsafe: "markupsafe",
+		matplotlib: "matplotlib",
+		msgpack: "msgpack",
+		numpy: "numpy",
+		pillow: "PIL",
+		pyyaml: "yaml",
+		regex: "regex",
+		ujson: "ujson"
+	});
+	const environment = {
+		implementation_name: "rustpython",
+		implementation_version: "3.14.0",
+		os_name: "posix",
+		platform_machine: "wasm32",
+		platform_python_implementation: "RustPython",
+		platform_release: "",
+		platform_system: "Linux",
+		platform_version: "",
+		python_full_version: "3.14.0",
+		python_version: "3.14",
+		sys_platform: "linux"
+	};
+	const versionKeys = /* @__PURE__ */ new Set([
+		"python_version",
+		"python_full_version",
+		"implementation_version"
+	]);
+	function normalize(name) {
+		return name.toLowerCase().replace(/[-_.]+/g, "-");
+	}
+	function parseVersion(text) {
+		const match = /^v?(?:(\d+)!)?(\d+(?:\.\d+)*)(?:[-_.]?(a|b|c|rc|alpha|beta|pre|preview)[-_.]?(\d*))?(?:-(\d+)|[-_.]?(?:post|rev|r)[-_.]?(\d*))?(?:[-_.]?dev[-_.]?(\d*))?(?:\+[a-z0-9.]+)?$/i.exec(text.trim());
+		if (!match) return void 0;
+		const kind = match[3]?.toLowerCase();
+		const rank = kind === void 0 ? -1 : kind.startsWith("a") ? 0 : kind.startsWith("b") ? 1 : 2;
+		const post = match[5] ?? match[6];
+		return {
+			epoch: Number(match[1] ?? 0),
+			release: match[2].split(".").map(Number),
+			pre: rank < 0 ? null : [rank, Number(match[4] || 0)],
+			post: post === void 0 ? -1 : Number(post || 0),
+			dev: match[7] === void 0 ? Infinity : Number(match[7] || 0)
+		};
+	}
+	function compare(a, b) {
+		if (a.epoch !== b.epoch) return a.epoch - b.epoch;
+		for (let i = 0; i < Math.max(a.release.length, b.release.length); i++) {
+			const delta = (a.release[i] ?? 0) - (b.release[i] ?? 0);
+			if (delta) return delta;
+		}
+		const stage = (v) => v.pre ? v.pre : v.post < 0 && v.dev !== Infinity ? [-1, 0] : [3, 0];
+		const [sa, sb] = [stage(a), stage(b)];
+		if (sa[0] !== sb[0]) return sa[0] - sb[0];
+		if (sa[1] !== sb[1]) return sa[1] - sb[1];
+		if (a.post !== b.post) return a.post - b.post;
+		return a.dev === b.dev ? 0 : a.dev < b.dev ? -1 : 1;
+	}
+	function prerelease(version) {
+		return version.pre !== null || version.dev !== Infinity;
+	}
+	function matches(text, op, wanted) {
+		if (op === "===") return text === wanted;
+		const version = parseVersion(text);
+		if (!version) return false;
+		if ((op === "==" || op === "!=") && wanted.endsWith(".*")) {
+			const same = wanted.slice(0, -2).split(".").map(Number).every((part, i) => (version.release[i] ?? 0) === part);
+			return op === "==" ? same : !same;
+		}
+		const target = parseVersion(wanted);
+		if (!target) return false;
+		const order = compare(version, target);
+		if (op === "==") return order === 0;
+		if (op === "!=") return order !== 0;
+		if (op === ">=") return order >= 0;
+		if (op === "<=") return order <= 0;
+		if (op === ">") return order > 0;
+		if (op === "<") return order < 0 && !(prerelease(version) && !prerelease(target));
+		if (op === "~=") {
+			const fixed = target.release.slice(0, Math.max(1, target.release.length - 1));
+			return order >= 0 && fixed.every((part, i) => (version.release[i] ?? 0) === part);
+		}
+		return false;
+	}
+	function parseSpecs(text) {
+		return text.split(",").map((part) => part.trim()).filter(Boolean).map((part) => {
+			const match = /^(===|==|!=|~=|>=|<=|>|<)\s*(\S+)$/.exec(part);
+			if (!match) throw new CommandError("invalid version specifier: " + part, 1);
+			return [match[1], match[2]];
+		});
+	}
+	function satisfies(version, specs) {
+		return specs.every(([op, wanted]) => matches(version, op, wanted));
+	}
+	function spelled(requirement) {
+		return requirement.name + requirement.specs.map((spec) => spec.join("")).join(",");
+	}
+	function parseRequirement(text) {
+		const cut = text.indexOf(";");
+		const body = cut < 0 ? text : text.slice(0, cut);
+		const match = /^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(?:\[([^\]]*)\])?\s*\(?([^()@/]*)\)?\s*$/.exec(body);
+		if (!match) throw new CommandError("cannot install " + text.trim() + ": only PyPI project names with optional extras and version specifiers are supported", 1);
+		return {
+			name: match[1],
+			extras: (match[2] ?? "").split(",").map((extra) => normalize(extra.trim())).filter(Boolean),
+			specs: parseSpecs(match[3]),
+			marker: cut < 0 ? "" : text.slice(cut + 1).trim()
+		};
+	}
+	function tokenize$1(marker) {
+		const tokens = [];
+		const pattern = /\s*(\(|\)|===|==|!=|~=|>=|<=|<|>|not\s+in\b|in\b|and\b|or\b|'[^']*'|"[^"]*"|[A-Za-z_][\w.]*)/y;
+		let at = 0;
+		while (marker.slice(at).trim()) {
+			pattern.lastIndex = at;
+			const match = pattern.exec(marker);
+			if (!match) throw new CommandError("cannot read environment marker: " + marker, 1);
+			tokens.push(match[1].replace(/\s+/g, " "));
+			at = pattern.lastIndex;
+		}
+		return tokens;
+	}
+	function evaluate(marker, extras) {
+		if (!marker) return true;
+		const tokens = tokenize$1(marker);
+		let at = 0;
+		const value = () => {
+			const token = tokens[at++];
+			if (token === void 0) throw new CommandError("cannot read environment marker: " + marker, 1);
+			if (/^['"]/.test(token)) return { text: token.slice(1, -1) };
+			if (token === "extra") return {
+				text: "",
+				key: "extra"
+			};
+			if (!(token in environment)) throw new CommandError("unknown environment marker " + token + " in " + marker, 1);
+			return {
+				text: environment[token],
+				key: token
+			};
+		};
+		const comparison = () => {
+			if (tokens[at] === "(") {
+				at++;
+				const result = disjunction();
+				at++;
+				return result;
+			}
+			const left = value();
+			const op = tokens[at++];
+			const right = value();
+			if (left.key === "extra" || right.key === "extra") {
+				const present = extras.includes(normalize(left.key === "extra" ? right.text : left.text));
+				return op === "!=" ? !present : present;
+			}
+			if (op === "in") return right.text.includes(left.text);
+			if (op === "not in") return !right.text.includes(left.text);
+			if (left.key && versionKeys.has(left.key) || right.key && versionKeys.has(right.key)) return matches(left.text, op, right.text);
+			if (op === "==" || op === "===") return left.text === right.text;
+			if (op === "!=") return left.text !== right.text;
+			return matches(left.text, op, right.text);
+		};
+		const conjunction = () => {
+			let result = comparison();
+			while (tokens[at] === "and") {
+				at++;
+				result = comparison() && result;
+			}
+			return result;
+		};
+		const disjunction = () => {
+			let result = conjunction();
+			while (tokens[at] === "or") {
+				at++;
+				result = conjunction() || result;
+			}
+			return result;
+		};
+		return disjunction();
+	}
+	function tags(filename) {
+		return filename.slice(0, -4).split("-").slice(-3);
+	}
+	function pure(filename) {
+		const [python, abi, platform] = tags(filename);
+		return abi === "none" && platform === "any" && python.split(".").some((tag) => /^py3\d*$/.test(tag));
+	}
+	function platform(filename) {
+		const [python, abi, platforms] = tags(filename);
+		const version = /^cp3(\d+)$/.exec(python);
+		if (!version || Number(version[1]) > 14 || !(abi === python || abi === "abi3")) return -1;
+		return platforms.split(".").some((tag) => /^(many|musl)linux.*_x86_64$/.test(tag)) ? Number(version[1]) : -1;
+	}
+	function compiledModule(name) {
+		const match = /^((?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*)\.[^/]*(?:so|pyd)$/.exec(name);
+		return match ? match[1].replace(/\//g, ".") : void 0;
+	}
+	function fits$1(requires) {
+		if (!requires) return true;
+		try {
+			return satisfies(environment.python_full_version, parseSpecs(requires));
+		} catch {
+			return false;
+		}
+	}
+	function fields(metadata, key) {
+		const values = [];
+		for (const line of metadata.split(/\r?\n/)) {
+			if (!line) break;
+			const cut = line.indexOf(":");
+			if (cut > 0 && line.slice(0, cut).toLowerCase() === key.toLowerCase()) values.push(line.slice(cut + 1).trim());
+		}
+		return values;
+	}
+	async function installed(fs) {
+		const found = /* @__PURE__ */ new Map();
+		const names = await fs.list(sitePackages).catch((error) => {
+			if (error instanceof FsError) return [];
+			throw error;
+		});
+		for (const entry of names) {
+			if (!entry.endsWith(".dist-info")) continue;
+			const dir = sitePackages + "/" + entry;
+			const metadata = await fs.read(dir + "/METADATA").then(decode, () => "");
+			const name = fields(metadata, "Name")[0];
+			const version = fields(metadata, "Version")[0];
+			if (name && version) found.set(normalize(name), {
+				name,
+				version,
+				dir,
+				requires: fields(metadata, "Requires-Dist")
+			});
+		}
+		return found;
+	}
+	async function removeTree$1(fs, path) {
+		const stat = await fs.stat(path);
+		if (!stat) return;
+		if (stat.kind === "directory") for (const name of await fs.list(path)) await removeTree$1(fs, path + "/" + name);
+		await fs.remove(path);
+	}
+	async function remove(fs, found) {
+		const record = await fs.read(found.dir + "/RECORD").then(decode, () => "");
+		const paths = /* @__PURE__ */ new Set();
+		for (const line of record.split(/\r?\n/)) {
+			const path = line.startsWith("\"") ? line.slice(1, line.indexOf("\"", 1)) : line.split(",")[0];
+			if (path && !unsafe(path)) paths.add(sitePackages + "/" + path);
+		}
+		const dirs = /* @__PURE__ */ new Set();
+		for (const path of paths) {
+			await fs.remove(path).catch((error) => {
+				if (!(error instanceof FsError)) throw error;
+			});
+			for (let dir = parentOf(path); dir.length > 39; dir = parentOf(dir)) dirs.add(dir);
+		}
+		for (const dir of [...dirs].sort((a, b) => b.length - a.length)) {
+			const left = await fs.list(dir).catch(() => void 0);
+			if (left && left.every((name) => name === "__pycache__")) await removeTree$1(fs, dir);
+		}
+		await removeTree$1(fs, found.dir);
+	}
+	function dependencies(requires, extras) {
+		return requires.map(parseRequirement).filter((requirement) => evaluate(requirement.marker, extras));
+	}
+	function size$1(bytes) {
+		return bytes >= 1048576 ? (bytes / 1024 / 1024).toFixed(1) + " MB" : Math.ceil(bytes / 1024) + " kB";
+	}
+	function binary(name) {
+		return /\.(so|pyd|dylib)(\.[\w.]+)?$/.test(name);
+	}
+	async function carried(ctx) {
+		const ran = await ctx.exec("python3 -c 'import sys, _imp; print(*sys.builtin_module_names); print(*_imp._frozen_module_names())'");
+		const [builtin, frozen] = ran.stdout.split("\n");
+		if (ran.status !== 0 || frozen === void 0) throw new CommandError("could not list python3's built-in modules", 1);
+		return {
+			builtin: new Set(builtin.trim().split(/\s+/)),
+			frozen: new Set(frozen.trim().split(/\s+/))
+		};
+	}
+	async function install(ctx, wanted, flags) {
+		const fetch = ctx.fetch;
+		if (!fetch) throw new CommandError("network access is not available in this shell", 1);
+		const say = (text) => {
+			if (!flags.quiet) ctx.stdout.write(text + "\n");
+		};
+		const present = await installed(ctx.fs);
+		const queue = wanted.map((requirement) => ({
+			requirement,
+			top: true
+		}));
+		const chosen = /* @__PURE__ */ new Map();
+		const done = [];
+		const modules = await carried(ctx);
+		for (let item = queue.shift(); item; item = queue.shift()) {
+			const { requirement, top } = item;
+			const key = normalize(requirement.name);
+			const previous = chosen.get(key);
+			if (previous !== void 0) {
+				if (previous && !satisfies(previous, requirement.specs)) throw new CommandError("cannot install " + spelled(requirement) + ": " + key + " " + previous + " was already chosen for another requirement", 1);
+				continue;
+			}
+			const module = key.replace(/-/g, "_");
+			if (modules.builtin.has(module) || modules.frozen.has(module)) {
+				say("Requirement already satisfied: " + requirement.name + " (python.wasm carries the module " + module + ")");
+				chosen.set(key, "");
+				continue;
+			}
+			const have = present.get(key);
+			if (have && satisfies(have.version, requirement.specs) && !(top && flags.upgrade)) {
+				say("Requirement already satisfied: " + have.name + " in /usr/local/lib/python3.14/site-packages (" + have.version + ")");
+				chosen.set(key, have.version);
+				if (flags.deps) for (const next of dependencies(have.requires, requirement.extras)) queue.push({
+					requirement: next,
+					top: false
+				});
+				continue;
+			}
+			say("Collecting " + spelled(requirement));
+			const response = await fetch(index + encodeURIComponent(key) + "/json", { signal: ctx.signal });
+			if (response.status === 404) throw new CommandError("No matching distribution found for " + requirement.name + " (not on PyPI)", 1);
+			if (!response.ok) throw new CommandError("could not read " + index + key + "/json: HTTP " + response.status, 1);
+			const project = await response.json();
+			const candidates = Object.entries(project.releases).map(([text, files]) => ({
+				text,
+				version: parseVersion(text),
+				files: files.filter((file) => !file.yanked)
+			})).filter((entry) => entry.version !== void 0 && entry.files.length > 0 && satisfies(entry.text, requirement.specs)).sort((a, b) => compare(b.version, a.version));
+			const stable = candidates.filter((entry) => !prerelease(entry.version));
+			const pick = (flags.pre || !stable.length ? candidates : stable)[0];
+			if (!pick) throw new CommandError("No matching distribution found for " + spelled(requirement), 1);
+			const wheels = pick.files.filter((file) => file.packagetype === "bdist_wheel" && fits$1(file.requires_python));
+			const wheel = wheels.find((file) => pure(file.filename)) ?? wheels.filter((file) => platform(file.filename) >= 0).sort((a, b) => platform(b.filename) - platform(a.filename))[0];
+			if (!wheel) {
+				const kinds = [...new Set(pick.files.map((file) => file.packagetype === "sdist" ? "a source distribution" : tags(file.filename).join("-")))];
+				throw new CommandError(project.info.name + " " + pick.text + " has no pure-Python (py3-none-any) or CPython 3 x86_64 Linux wheel for Python 3.14, only " + kinds.slice(0, 5).join(", ") + (kinds.length > 5 ? " and " + (kinds.length - 5) + " more" : "") + ". nanocode's Python cannot build source distributions or load compiled wheels; the compiled modules it ships are " + shippedModules.join(", "), 1);
+			}
+			chosen.set(key, pick.text);
+			say("Downloading " + wheel.filename + " (" + size$1(wheel.size) + ")");
+			const download = await fetch(wheel.url, { signal: ctx.signal });
+			if (!download.ok) throw new CommandError("could not download " + wheel.url + ": HTTP " + download.status, 1);
+			const data = new Uint8Array(await download.arrayBuffer());
+			const { entries } = readEntries(data);
+			const absent = entries.filter((entry) => binary(entry.name) && !/^[^/]+\.libs\//.test(entry.name)).map((entry) => compiledModule(entry.name) ?? entry.name).filter((name) => !modules.builtin.has(name));
+			if (absent.length) throw new CommandError(wheel.filename + " has compiled modules nanocode's Python does not carry: " + absent.join(", ") + "; the compiled modules it carries come from " + shippedModules.join(", "), 1);
+			const info = entries.find((entry) => /^[^/]+\.dist-info\/METADATA$/.test(entry.name));
+			if (!info) throw new CommandError(wheel.filename + " has no .dist-info/METADATA", 1);
+			const metadata = decode(await contents(data, info));
+			if (have) {
+				say("Uninstalling " + have.name + "-" + have.version);
+				await remove(ctx.fs, have);
+			}
+			const left = [];
+			for (const entry of entries) {
+				if (entry.directory || unsafe(entry.name) || binary(entry.name)) continue;
+				const scheme = /^[^/]+\.data\/([^/]+)\/(.+)$/.exec(entry.name);
+				if (scheme && scheme[1] !== "purelib" && scheme[1] !== "platlib") {
+					left.push(entry.name);
 					continue;
 				}
-				child.lazyFile = join$2(host, name);
-				child.lazySize = stat.size;
-				child.node_ops = ops.file;
-				child.stream_ops = ops.stream;
+				const path = sitePackages + "/" + (scheme ? scheme[2] : entry.name);
+				await mkdirs(ctx.fs, parentOf(path));
+				await ctx.fs.write(path, await contents(data, entry));
 			}
-			node.atime = node.mtime = node.ctime = Date.now();
-		};
-		const materialize = (node) => {
-			const host = node.lazyFile;
-			if (host === void 0) return;
-			const data = (() => {
-				try {
-					return files.read(host);
-				} catch (error) {
-					throw fail(error);
-				}
-			})();
-			node.lazyFile = void 0;
-			node.contents = data;
-			node.usedBytes = data.length;
-		};
-		const dir = MEMFS.ops_table.dir.node;
-		const file = MEMFS.ops_table.file;
-		const ops = {
-			dir: {
-				...dir,
-				lookup(parent, name) {
-					fill(parent);
-					const node = parent.contents[name];
-					if (!node) throw new fs.ErrnoError(codes["ENOENT"] ?? 0);
-					return node;
-				},
-				readdir(node) {
-					fill(node);
-					return dir.readdir(node);
-				},
-				rename(node, target, name) {
-					const existing = target.contents[name];
-					if (existing) fill(existing);
-					return dir.rename(node, target, name);
-				},
-				rmdir(parent, name) {
-					const existing = parent.contents[name];
-					if (existing) fill(existing);
-					return dir.rmdir(parent, name);
-				}
-			},
-			file: {
-				...file.node,
-				getattr(node) {
-					const attr = file.node.getattr(node);
-					if (node.lazyFile === void 0) return attr;
-					attr.size = node.lazySize ?? 0;
-					attr.blocks = Math.ceil(attr.size / attr.blksize);
-					return attr;
-				},
-				setattr(node, attr) {
-					if (attr.size === 0) node.lazyFile = void 0;
-					else if (attr.size !== void 0) materialize(node);
-					return file.node.setattr(node, attr);
-				}
-			},
-			stream: {
-				...file.stream,
-				open(stream) {
-					materialize(stream.node);
-				}
-			}
-		};
-		for (const root of roots) {
-			fs.mkdirTree(root);
-			const node = fs.mount(MEMFS, {}, root);
-			node.lazyDir = root;
-			node.node_ops = ops.dir;
+			const dist = sitePackages + "/" + info.name.slice(0, info.name.indexOf("/"));
+			await ctx.fs.write(dist + "/INSTALLER", encode("nanocode\n"));
+			if (top) await ctx.fs.write(dist + "/REQUESTED", /* @__PURE__ */ new Uint8Array());
+			if (left.length) ctx.stderr.write("pip: " + project.info.name + ": did not install " + left.join(", ") + " (only importable files go into site-packages)\n");
+			done.push(project.info.name + "-" + pick.text);
+			if (flags.deps) for (const next of dependencies(fields(metadata, "Requires-Dist"), requirement.extras)) queue.push({
+				requirement: next,
+				top: false
+			});
 		}
-		mounted.set(pyodide, roots);
-		const dirty = /* @__PURE__ */ new Set();
-		const gone = /* @__PURE__ */ new Set();
-		const absolute = (path) => {
-			if (path.startsWith("/")) return path;
-			const cwd = fs.cwd();
-			return (cwd === "/" ? "" : cwd) + "/" + path;
-		};
-		const delegate = fs.trackingDelegate;
-		const truncate = fs.truncate;
-		delegate["onOpenFile"] = ((path, flags) => {
-			if (flags & WRITES) dirty.add(absolute(path));
-		});
-		delegate["onWriteToFile"] = ((path) => dirty.add(absolute(path)));
-		delegate["onMovePath"] = ((from, to) => {
-			gone.add(absolute(from));
-			dirty.add(absolute(to));
-		});
-		delegate["onDeletePath"] = ((path) => gone.add(absolute(path)));
-		delegate["onMakeDirectory"] = ((path) => {
-			if (!fs.analyzePath(path).exists) dirty.add(absolute(path));
-		});
-		fs.truncate = (path, length) => {
-			if (typeof path === "string") dirty.add(absolute(path));
-			return truncate.call(fs, path, length);
-		};
-		return { finish() {
-			const found = {
-				files: /* @__PURE__ */ new Map(),
-				dirs: [],
-				deleted: []
+		if (done.length) say("Successfully installed " + done.join(" "));
+		return 0;
+	}
+	async function requirementsFile(ctx, path) {
+		if (path === void 0) throw new CommandError("-r needs a requirements file", 2);
+		return decode(await ctx.fs.read(ctx.resolve(path))).split(/\r?\n/).map((line) => line.replace(/(^|\s)#.*$/, "").trim()).filter(Boolean);
+	}
+	async function pip(ctx, args) {
+		const [command, ...rest] = args;
+		if (command === void 0 || command === "-h" || command === "--help" || command === "help") {
+			ctx.stdout.write("Usage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] PACKAGE...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE...\nInstalls pure-Python (py3-none-any) wheels from PyPI into " + sitePackages + "; nanocode's Python ships the compiled modules " + shippedModules.join(", ") + "\n");
+			return 0;
+		}
+		if (command === "-V" || command === "--version") {
+			ctx.stdout.write("pip (nanocode, pure-Python wheels only) from " + sitePackages + " (python 3.14)\n");
+			return 0;
+		}
+		if (command === "install") {
+			const flags = {
+				quiet: false,
+				upgrade: false,
+				deps: true,
+				pre: false
 			};
-			const dirs = /* @__PURE__ */ new Set();
-			const deleted = /* @__PURE__ */ new Set();
-			const visit = (path) => {
-				if (!roots.some((root) => within$2(path, root))) return;
-				if (!fs.analyzePath(path).exists) return void deleted.add(path);
-				const mode = fs.stat(path).mode;
-				if (fs.isFile(mode)) return void found.files.set(path, fs.readFile(path));
-				if (!fs.isDir(mode) || dirs.has(path)) return;
-				dirs.add(path);
-				for (const name of fs.readdir(path)) if (name !== "." && name !== "..") visit(join$2(path, name));
-			};
-			for (const path of [...gone, ...dirty]) visit(path);
-			for (const key of [
-				"onOpenFile",
-				"onWriteToFile",
-				"onMovePath",
-				"onDeletePath",
-				"onMakeDirectory"
-			]) delete delegate[key];
-			fs.truncate = truncate;
-			detach(pyodide);
-			found.dirs = [...dirs];
-			found.deleted = [...deleted];
-			return found;
-		} };
+			const specs = [];
+			for (let i = 0; i < rest.length; i++) {
+				const arg = rest[i];
+				if (arg === "-q" || arg === "--quiet") flags.quiet = true;
+				else if (arg === "-U" || arg === "--upgrade") flags.upgrade = true;
+				else if (arg === "--no-deps") flags.deps = false;
+				else if (arg === "--pre") flags.pre = true;
+				else if (arg === "-r" || arg === "--requirement") specs.push(...await requirementsFile(ctx, rest[++i]));
+				else if ([
+					"--user",
+					"--break-system-packages",
+					"--no-cache-dir",
+					"--disable-pip-version-check"
+				].includes(arg)) continue;
+				else if (arg.startsWith("-")) throw new CommandError("install: unsupported option " + arg + "\nUsage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] PACKAGE...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE...\n", 2);
+				else specs.push(arg);
+			}
+			if (!specs.length) throw new CommandError("You must give at least one requirement to install", 1);
+			return install(ctx, specs.map(parseRequirement), flags);
+		}
+		if (command === "uninstall") {
+			const present = await installed(ctx.fs);
+			for (const name of rest.filter((arg) => arg !== "-y" && arg !== "--yes")) {
+				const found = present.get(normalize(name));
+				if (!found) {
+					ctx.stderr.write("WARNING: Skipping " + name + " as it is not installed.\n");
+					continue;
+				}
+				await remove(ctx.fs, found);
+				ctx.stdout.write("Successfully uninstalled " + found.name + "-" + found.version + "\n");
+			}
+			return 0;
+		}
+		if (command === "list" || command === "freeze") {
+			const present = [...(await installed(ctx.fs)).values()].sort((a, b) => a.name.localeCompare(b.name));
+			if (command === "list") ctx.stdout.write("Package Version\n------- -------\n");
+			for (const found of present) ctx.stdout.write(found.name + (command === "list" ? " " : "==") + found.version + "\n");
+			return 0;
+		}
+		if (command === "show") {
+			const present = await installed(ctx.fs);
+			let status = 0;
+			for (const name of rest) {
+				const found = present.get(normalize(name));
+				if (!found) {
+					ctx.stderr.write("WARNING: Package(s) not found: " + name + "\n");
+					status = 1;
+					continue;
+				}
+				ctx.stdout.write("Name: " + found.name + "\nVersion: " + found.version + "\nLocation: /usr/local/lib/python3.14/site-packages\nRequires: " + found.requires.map((text) => parseRequirement(text).name).join(", ") + "\n");
+			}
+			return status;
+		}
+		throw new CommandError("unknown command \"" + command + "\"\nUsage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] PACKAGE...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE...\n", 1);
 	}
 	// src/bash/internal/commands/rustpython.ts
 	init_FileSystem();
 	init_Fs();
 	init_Shell();
+	const jspi = WebAssembly;
+	const suspends = typeof jspi.Suspending === "function" && typeof jspi.promising === "function";
 	const errno = {
 		EACCES: 13,
 		EAGAIN: 11,
@@ -31404,7 +32559,37 @@ zstd: *.zst, *.zstd
 		ENOTSUP: 95,
 		EROFS: 30
 	};
-	const instances$1 = /* @__PURE__ */ new WeakMap();
+	const instances = /* @__PURE__ */ new WeakMap();
+	const imageSection = "nanocode.python.image";
+	const imageMagic = "NCPYMEM1";
+	const images = /* @__PURE__ */ new WeakMap();
+	function descriptor(module) {
+		const [section] = WebAssembly.Module.customSections(module, imageSection);
+		return section && new Uint8Array(section);
+	}
+	function needsImage(module) {
+		return descriptor(module) !== void 0 && !images.has(module);
+	}
+	async function gunzip(bytes) {
+		const stream = new Response(bytes).body.pipeThrough(new DecompressionStream("gzip"));
+		return new Uint8Array(await new Response(stream).arrayBuffer());
+	}
+	async function provide(module, data) {
+		const wanted = descriptor(module);
+		if (!wanted || images.has(module)) return;
+		let bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+		if (bytes[0] === 31 && bytes[1] === 139) bytes = await gunzip(bytes);
+		const header = bytes.subarray(0, 8 + wanted.length);
+		if (text$2.decode(header.subarray(0, 8)) !== imageMagic) throw new Error("it is not a python.data image");
+		if (!header.subarray(8).every((byte, index) => byte === wanted[index])) throw new Error("it belongs to another build of python.wasm");
+		const view = new DataView(header.buffer, header.byteOffset, header.length);
+		const length = view.getUint32(44, true);
+		if (bytes.length - header.length !== length) throw new Error("it is truncated");
+		images.set(module, {
+			base: view.getUint32(40, true),
+			bytes: bytes.subarray(header.length)
+		});
+	}
 	const randomBytes = 65536;
 	const text$2 = new TextDecoder();
 	const limits = [
@@ -31416,12 +32601,15 @@ zstd: *.zst, *.zstd
 	];
 	function instantiate(module) {
 		const state = {
+			call: void 0,
 			exports: void 0,
 			files: void 0,
 			initial: 0,
 			panic: void 0,
-			running: false,
+			retry: void 0,
+			spare: false,
 			spawn: void 0,
+			tape: void 0,
 			stopped: () => false
 		};
 		const view = (ptr, len) => new Uint8Array(state.exports.memory.buffer, ptr >>> 0, len >>> 0);
@@ -31470,25 +32658,51 @@ zstd: *.zst, *.zstd
 				return 0n;
 			}
 		];
-		state.exports = new WebAssembly.Instance(module, { python: {
+		const imports = { python: {
 			host_fs(op, path, pathLen, data, dataLen, arg) {
-				const files = state.files;
 				const handler = ops[op];
-				if (!files || !handler) return -BigInt(errno["ENOTSUP"] ?? 0);
-				try {
-					return handler(files, decode(view(path, pathLen)), view(data, dataLen), arg);
-				} catch (error) {
-					const code = error instanceof FsError ? errno[error.code] : void 0;
-					if (code === void 0) throw error;
-					return -BigInt(code);
-				}
+				if (!state.files || !handler) return -BigInt(errno["ENOTSUP"] ?? 0);
+				const attempt = () => {
+					try {
+						return handler(state.files, decode(view(path, pathLen)), view(data, dataLen), arg);
+					} catch (error) {
+						const code = error instanceof FsError ? errno[error.code] : void 0;
+						if (code === void 0) throw error;
+						const retry = state.retry;
+						if (!retry) return -BigInt(code);
+						return retry().then((again) => again ? attempt() : -BigInt(code));
+					}
+				};
+				return attempt();
 			},
-			host_now: () => performance.now(),
+			host_now() {
+				const tape = state.tape;
+				if (!tape) return performance.now();
+				const taped = tape.clock[tape.clockAt];
+				if (taped !== void 0) {
+					tape.clockAt++;
+					return taped;
+				}
+				const now = performance.now();
+				tape.clock.length = tape.clockAt++;
+				tape.clock.push(now);
+				return now;
+			},
 			host_panic(ptr, len) {
 				state.panic = decode(view(ptr, len));
 			},
 			host_random(ptr, len) {
+				const tape = state.tape;
+				const taped = tape?.random[tape.randomAt];
+				if (tape && taped?.length === len) {
+					tape.randomAt++;
+					view(ptr, len).set(taped);
+					return;
+				}
 				for (let at = 0; at < len; at += randomBytes) crypto.getRandomValues(view(ptr + at, Math.min(randomBytes, len - at)));
+				if (!tape) return;
+				tape.random.length = tape.randomAt++;
+				tape.random.push(view(ptr, len).slice());
 			},
 			host_spawn(ptr, len) {
 				const spawn = state.spawn;
@@ -31512,26 +32726,52 @@ zstd: *.zst, *.zstd
 				for (let count = u32(); count > 0; count--) env[decode(field())] = decode(field());
 				const cwd = decode(field());
 				const stdin = field();
+				const merged = u32() !== 0;
+				const answer = (exited) => {
+					if (typeof exited === "string") return -BigInt(errno[exited] ?? errno["EIO"] ?? 0);
+					const out = new Uint8Array(12 + exited.stdout.length + exited.stderr.length);
+					const fields = new DataView(out.buffer);
+					fields.setInt32(0, exited.status, true);
+					fields.setUint32(4, exited.stdout.length, true);
+					out.set(exited.stdout, 8);
+					fields.setUint32(8 + exited.stdout.length, exited.stderr.length, true);
+					out.set(exited.stderr, 12 + exited.stdout.length);
+					return reply(out);
+				};
 				const exited = spawn({
 					argv,
 					cwd,
 					env,
-					merged: u32() !== 0,
+					merged,
 					stdin
 				});
-				if (typeof exited === "string") return -BigInt(errno[exited] ?? errno["EIO"] ?? 0);
-				const out = new Uint8Array(12 + exited.stdout.length + exited.stderr.length);
-				const fields = new DataView(out.buffer);
-				fields.setInt32(0, exited.status, true);
-				fields.setUint32(4, exited.stdout.length, true);
-				out.set(exited.stdout, 8);
-				fields.setUint32(8 + exited.stdout.length, exited.stderr.length, true);
-				out.set(exited.stderr, 12 + exited.stdout.length);
-				return reply(out);
+				return exited instanceof Promise ? exited.then(answer) : answer(exited);
 			},
 			host_stopped: () => state.stopped() ? 1 : 0,
-			host_time: () => Date.now()
-		} }).exports;
+			host_time() {
+				const tape = state.tape;
+				if (!tape) return Date.now();
+				const taped = tape.time[tape.timeAt];
+				if (taped !== void 0) {
+					tape.timeAt++;
+					return taped;
+				}
+				const now = Date.now();
+				tape.time.length = tape.timeAt++;
+				tape.time.push(now);
+				return now;
+			}
+		} };
+		const image = images.get(module);
+		if (!image && descriptor(module)) throw new Error("python.wasm runs only with its python.data image");
+		if (suspends) {
+			const python = imports.python;
+			python["host_fs"] = new jspi.Suspending(imports.python.host_fs);
+			python["host_spawn"] = new jspi.Suspending(imports.python.host_spawn);
+		}
+		state.exports = new WebAssembly.Instance(module, imports).exports;
+		if (suspends) state.call = jspi.promising(state.exports.python_run);
+		if (image) new Uint8Array(state.exports.memory.buffer, image.base, image.bytes.length).set(image.bytes);
 		state.initial = state.exports.memory.buffer.byteLength;
 		return state;
 	}
@@ -31674,7 +32914,7 @@ zstd: *.zst, *.zstd
 			}
 		};
 		const filesIn = (dir) => (names.get(dir) ?? []).map((name) => join$1(dir, name)).filter((path) => stats.get(path)?.kind === "file");
-		const filesUnder = (root) => [...stats].filter((entry) => entry[1]?.kind === "file" && within$1(entry[0], root)).map((entry) => entry[0]);
+		const filesUnder = (root) => [...stats].filter((entry) => entry[1]?.kind === "file" && within(entry[0], root)).map((entry) => entry[0]);
 		const sizeOf = (files) => files.reduce((total, file) => total + (stats.get(file)?.size ?? 0), 0);
 		const likely = (root, path) => {
 			const like = filesUnder(root).filter((file) => file !== path && !bytes.has(file) && asked.has(suffixOf(file))).sort();
@@ -31696,8 +32936,8 @@ zstd: *.zst, *.zstd
 		};
 		const batch = (path) => {
 			const dir = parentOf(path);
-			const tree = [...trees].find((tree) => within$1(path, tree));
-			const root = tree && [...bytes.keys()].some((file) => within$1(file, tree)) ? tree : void 0;
+			const tree = [...trees].find((tree) => within(path, tree));
+			const root = tree && [...bytes.keys()].some((file) => within(file, tree)) ? tree : void 0;
 			return [root ? likely(root, path) : [], filesIn(dir).some((sibling) => bytes.has(sibling)) ? filesIn(dir) : []].map((pool) => pool.filter((file) => !bytes.has(file))).find((files) => files.includes(path) && fits(sizeOf(files))) ?? [path];
 		};
 		const fetchTree = async (path) => {
@@ -31797,6 +33037,9 @@ zstd: *.zst, *.zstd
 			},
 			missed: () => missing,
 			probe: listing,
+			settle() {
+				missing = false;
+			},
 			reset() {
 				missing = false;
 				files = /* @__PURE__ */ new Map();
@@ -31815,7 +33058,7 @@ zstd: *.zst, *.zstd
 		const dot = name.lastIndexOf(".");
 		return dot > 0 ? name.slice(dot) : "";
 	}
-	function within$1(path, dir) {
+	function within(path, dir) {
 		return path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
 	}
 	function encodeRequest(request, spawns) {
@@ -31921,32 +33164,71 @@ zstd: *.zst, *.zstd
 			stdout
 		};
 	}
-	function prepare(module) {
-		if (!instances$1.has(module)) instances$1.set(module, instantiate(module));
+	const busy = /* @__PURE__ */ new WeakMap();
+	function fits(module, memory) {
+		let used = 0;
+		let image = 0;
+		for (const instance of busy.get(module) ?? []) {
+			used += instance.exports.memory.buffer.byteLength;
+			image = instance.initial;
+		}
+		return instances.has(module) || used + image <= memory;
 	}
-	function run(module, options) {
-		if (instances$1.get(module)?.running) instances$1.delete(module);
-		prepare(module);
-		const instance = instances$1.get(module);
+	function take(module, fresh) {
+		const idle = instances.get(module);
+		instances.delete(module);
+		const running = busy.get(module) ?? /* @__PURE__ */ new Set();
+		busy.set(module, running);
+		const taken = idle && !fresh ? idle : instantiate(module);
+		if (taken !== idle) taken.spare = running.size > 0;
+		running.add(taken);
+		return taken;
+	}
+	function begin(instance, options) {
 		instance.files = options.files;
 		instance.stopped = options.stopped;
 		instance.spawn = options.spawn;
+		instance.tape = options.tape;
+		const input = encodeRequest(options.request, options.spawn !== void 0);
+		const ptr = instance.exports.python_input(input.length);
+		new Uint8Array(instance.exports.memory.buffer, ptr >>> 0, input.length).set(input);
+	}
+	function end(module, instance, len, request) {
+		if (instance.exports.memory.buffer.byteLength - instance.initial <= request.memory / 2 && !instance.spare && !instances.has(module)) instances.set(module, instance);
+		return decodeRan(new Uint8Array(instance.exports.memory.buffer, instance.exports.python_output() >>> 0, len >>> 0).slice());
+	}
+	function failed(instance, error) {
+		return new CommandError("the Python interpreter failed and restarts on the next run: " + (instance.panic ?? (error instanceof Error ? error.message : String(error))), 1);
+	}
+	function release$1(module, instance) {
+		busy.get(module)?.delete(instance);
+		instance.files = void 0;
+		instance.retry = void 0;
+		instance.spawn = void 0;
+		instance.tape = void 0;
+		instance.stopped = () => false;
+	}
+	function run(module, options) {
+		const instance = take(module, options.fresh);
 		try {
-			const input = encodeRequest(options.request, options.spawn !== void 0);
-			const ptr = instance.exports.python_input(input.length);
-			new Uint8Array(instance.exports.memory.buffer, ptr, input.length).set(input);
-			instance.running = true;
-			const len = instance.exports.python_run();
-			instance.running = false;
-			if (instance.exports.memory.buffer.byteLength - instance.initial > options.request.memory / 2) instances$1.delete(module);
-			return decodeRan(new Uint8Array(instance.exports.memory.buffer, instance.exports.python_output(), len).slice());
+			begin(instance, options);
+			return end(module, instance, instance.exports.python_run(), options.request);
 		} catch (error) {
-			instances$1.delete(module);
-			throw new CommandError("the Python interpreter failed and restarts on the next run: " + (instance.panic ?? (error instanceof Error ? error.message : String(error))), 1);
+			throw failed(instance, error);
 		} finally {
-			instance.files = void 0;
-			instance.spawn = void 0;
-			instance.stopped = () => false;
+			release$1(module, instance);
+		}
+	}
+	async function runAsync(module, options) {
+		const instance = take(module, options.fresh);
+		try {
+			begin(instance, options);
+			instance.retry = options.retry;
+			return end(module, instance, await instance.call(), options.request);
+		} catch (error) {
+			throw failed(instance, error);
+		} finally {
+			release$1(module, instance);
 		}
 	}
 	function mib(bytes) {
@@ -31964,913 +33246,13 @@ zstd: *.zst, *.zstd
 		if (limit === "sleep") throw new CommandError("it cannot wait in this shell", 126);
 		throw new CommandError("it ran " + ran.steps + " steps, the most one Python run may compute here" + (budget.stepsPerMs === void 0 ? "" : " (" + budget.cpuMs + " ms of CPU at " + budget.stepsPerMs + " steps per ms; the host raises it with Python's cpuMs option, on Cloudflare with the PYTHON_CPU_MS variable or workspace.pythonCpuMs)") + "; split the work into shorter runs that save their progress to a file and continue from it", 124);
 	}
-	// src/bash/internal/commands/pyworker.ts
-	init_FileSystem();
-	init_Shell();
-	const SOURCE = String.raw`
-const { parentPort, receiveMessageOnPort, workerData } = require("node:worker_threads");
-const { createRequire } = require("node:module");
-const RESERVED = ["/dev", "/proc", "/lib", "/home/pyodide", "/home/web_user"];
-const reserved = path => RESERVED.some(prefix => path === prefix || path.startsWith(prefix + "/"));
-const join = (base, name) => base === "/" ? "/" + name : base + "/" + name;
-const within = (path, dir) => path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
-const parentOf = path => { const i = path.lastIndexOf("/"); return i <= 0 ? "/" : path.slice(0, i); };
-const decoder = new TextDecoder();
-let py, start, cancel, loading, micropip = false, mirrored = [], mirror = null, known = new Map(), tracking = null, lazy = null, lazyOps = null;
-const S_IFDIR = 0o40000;
-const S_IFREG = 0o100000;
-const WRITES = 1 | 2 | 64 | 512 | 1024;
-const PARKED_BYTES = 64 * 1024 * 1024;
-const parked = new Map();
-function absolute(path) {
-  if (path.startsWith("/")) return path;
-  const cwd = py.FS.cwd();
-  return (cwd === "/" ? "" : cwd) + "/" + path;
-}
-function track(fs) {
-  const delegate = fs.trackingDelegate;
-  delegate.onOpenFile = (path, flags) => { if (tracking && (flags & WRITES)) tracking.dirty.add(absolute(path)); };
-  delegate.onWriteToFile = path => { if (tracking) tracking.dirty.add(absolute(path)); };
-  delegate.onMovePath = (from, to) => { if (tracking) { tracking.gone.add(absolute(from)); tracking.dirty.add(absolute(to)); } };
-  delegate.onDeletePath = path => { if (tracking) tracking.gone.add(absolute(path)); };
-  delegate.onMakeDirectory = path => { if (tracking && !fs.analyzePath(path).exists) tracking.dirty.add(absolute(path)); };
-  const truncate = fs.truncate.bind(fs);
-  fs.truncate = (path, length) => { if (tracking && typeof path === "string") tracking.dirty.add(absolute(path)); return truncate(path, length); };
-}
-function changes(fs, roots) {
-  const files = new Map(), dirs = new Set(), deleted = new Set();
-  const inside = path => !reserved(path) && roots.some(root => within(path, root));
-  const visit = path => {
-    if (!inside(path)) return;
-    if (!fs.analyzePath(path).exists) return void deleted.add(path);
-    const mode = fs.stat(path).mode;
-    if (fs.isFile(mode)) return void files.set(path, fs.readFile(path));
-    if (!fs.isDir(mode) || dirs.has(path)) return;
-    dirs.add(path);
-    for (const name of fs.readdir(path)) if (name !== "." && name !== "..") visit(join(path, name));
-  };
-  for (const path of [...tracking.gone, ...tracking.dirty]) visit(path);
-  return { files, dirs: [...dirs], deleted: [...deleted] };
-}
-async function load() {
-  let mod;
-  for (const from of [process.cwd() + "/package.json", workerData.from]) {
-    try { mod = createRequire(from)("pyodide"); break; } catch {}
-  }
-  if (!mod) mod = await import("pyodide");
-  const options = { packageCacheDir: workerData.cacheDir, stdout: () => {}, stderr: () => {} };
-  const fs = require("node:fs");
-  const snapshot = workerData.cacheDir + "/pyodide-" + mod.version + ".snapshot";
-  const saved = fs.existsSync(snapshot) ? fs.readFileSync(snapshot) : undefined;
-  if (saved) py = await mod.loadPyodide({ ...options, _loadSnapshot: saved }).catch(() => undefined);
-  if (!py) {
-    py = await mod.loadPyodide({ ...options, _makeSnapshot: true });
-    const partial = snapshot + "." + process.pid + ".partial";
-    fs.mkdirSync(workerData.cacheDir, { recursive: true });
-    fs.writeFileSync(partial, py.makeMemorySnapshot());
-    fs.renameSync(partial, snapshot);
-  }
-  track(py.FS);
-  const ns = py.globals.get("dict")();
-  py.runPython(workerData.helper, { globals: ns });
-  start = ns.get("start");
-  cancel = ns.get("cancel");
-}
-function ask(op, path) {
-  Atomics.store(lazy.flag, 0, 0);
-  parentPort.postMessage({ id: lazy.id, type: "fs", op, path });
-  Atomics.wait(lazy.flag, 0, 0);
-  const reply = receiveMessageOnPort(lazy.port).message;
-  if (reply.code !== undefined) throw new py.FS.ErrnoError(py.ERRNO_CODES[reply.code] ?? py.ERRNO_CODES.EIO);
-  return reply.value;
-}
-function fill(node) {
-  if (node.lazyDir === undefined) return;
-  const host = node.lazyDir;
-  node.lazyDir = undefined;
-  const MEMFS = py.FS.filesystems.MEMFS;
-  for (const [name, kind, size, mtime, mode] of ask("list", host)) {
-    if (name in node.contents) continue;
-    const dir = kind === "directory";
-    const child = MEMFS.createNode(node, name, (dir ? S_IFDIR : S_IFREG) | (mode & 0o777), 0);
-    child.atime = child.mtime = child.ctime = mtime;
-    if (dir) {
-      child.lazyDir = join(host, name);
-      child.node_ops = lazyOps.dir;
-      continue;
-    }
-    child.lazyFile = join(host, name);
-    child.lazySize = size;
-    child.node_ops = lazyOps.file;
-    child.stream_ops = lazyOps.stream;
-  }
-  node.atime = node.mtime = node.ctime = Date.now();
-}
-function materialize(node) {
-  if (node.lazyFile === undefined) return;
-  const data = ask("read", node.lazyFile);
-  node.lazyFile = undefined;
-  node.contents = data;
-  node.usedBytes = data.length;
-}
-function tables(MEMFS) {
-  if (lazyOps) return lazyOps;
-  const dir = MEMFS.ops_table.dir.node;
-  const file = MEMFS.ops_table.file;
-  lazyOps = {
-    dir: {
-      ...dir,
-      lookup(parent, name) {
-        fill(parent);
-        const node = parent.contents[name];
-        if (!node) throw new py.FS.ErrnoError(py.ERRNO_CODES.ENOENT);
-        return node;
-      },
-      readdir(node) { fill(node); return dir.readdir(node); },
-      rename(node, target, name) { if (target.contents[name]) fill(target.contents[name]); return dir.rename(node, target, name); },
-      rmdir(parent, name) { if (parent.contents[name]) fill(parent.contents[name]); return dir.rmdir(parent, name); },
-    },
-    file: {
-      ...file.node,
-      getattr(node) {
-        const attr = file.node.getattr(node);
-        if (node.lazyFile !== undefined) {
-          attr.size = node.lazySize;
-          attr.blocks = Math.ceil(attr.size / attr.blksize);
-        }
-        return attr;
-      },
-      setattr(node, attr) {
-        if (attr.size === 0) node.lazyFile = undefined;
-        else if (attr.size !== undefined) materialize(node);
-        return file.node.setattr(node, attr);
-      },
-    },
-    stream: { ...file.stream, open(stream) { materialize(stream.node); } },
-  };
-  return lazyOps;
-}
-function attach(roots) {
-  const fs = py.FS;
-  const MEMFS = fs.filesystems.MEMFS;
-  for (const root of roots) {
-    fs.mkdirTree(root);
-    const node = fs.mount(MEMFS, {}, root);
-    const ops = tables(MEMFS);
-    node.lazyDir = root;
-    node.node_ops = ops.dir;
-  }
-}
-function detach(roots) {
-  const fs = py.FS;
-  fs.chdir("/");
-  for (const root of roots) fs.unmount(root);
-}
-function unmirror(fs, path) {
-  if (reserved(path) || !fs.analyzePath(path).exists) return;
-  if (!fs.isDir(fs.stat(path).mode)) return fs.unlink(path);
-  for (const name of fs.readdir(path)) if (name !== "." && name !== "..") unmirror(fs, join(path, name));
-  if (path !== "/" && !RESERVED.some(prefix => within(prefix, path))) fs.rmdir(path);
-}
-function prune(fs, path, dirs, listing) {
-  if (reserved(path) || !fs.analyzePath(path).exists) return;
-  if (!fs.isDir(fs.stat(path).mode)) {
-    if (!listing.has(path)) unmirror(fs, path);
-    return;
-  }
-  if (!dirs.has(path) && !mirrored.includes(path)) return unmirror(fs, path);
-  for (const name of fs.readdir(path)) if (name !== "." && name !== "..") prune(fs, join(path, name), dirs, listing);
-}
-function size(fs, path) {
-  if (reserved(path) || !fs.analyzePath(path).exists) return 0;
-  const stat = fs.stat(path);
-  if (fs.isFile(stat.mode)) return stat.size;
-  if (!fs.isDir(stat.mode)) return 0;
-  return fs.readdir(path).filter(name => name !== "." && name !== "..").reduce((total, name) => total + size(fs, join(path, name)), 0);
-}
-function park(fs) {
-  const bytes = mirrored.reduce((total, root) => total + size(fs, root), 0);
-  if (mirror !== null && bytes <= PARKED_BYTES) {
-    const files = new Map(), dirs = [];
-    const visit = path => {
-      if (reserved(path) || !fs.analyzePath(path).exists) return;
-      const mode = fs.stat(path).mode;
-      if (fs.isFile(mode)) return void files.set(path, fs.readFile(path));
-      if (!fs.isDir(mode)) return;
-      dirs.push(path);
-      for (const name of fs.readdir(path)) if (name !== "." && name !== "..") visit(join(path, name));
-    };
-    for (const root of mirrored) visit(root);
-    parked.delete(mirror);
-    parked.set(mirror, { files, dirs, bytes, known, mirrored });
-    let total = 0;
-    for (const entry of parked.values()) total += entry.bytes;
-    for (const [id, entry] of parked) {
-      if (total <= PARKED_BYTES) break;
-      parked.delete(id);
-      total -= entry.bytes;
-    }
-  }
-  for (const path of mirrored) unmirror(fs, path);
-  mirrored = [];
-  known = new Map();
-}
-function sync(message) {
-  const fs = py.FS;
-  fs.chdir("/");
-  if (message.mirror !== mirror) {
-    park(fs);
-    mirror = message.mirror;
-    const found = parked.get(mirror);
-    if (found) {
-      parked.delete(mirror);
-      for (const path of found.dirs) fs.mkdirTree(path);
-      for (const [path, data] of found.files) fs.writeFile(path, data);
-      known = found.known;
-      mirrored = found.mirrored;
-    }
-  }
-  const listing = new Map(message.files);
-  const dirs = new Set(message.dirs);
-  for (const path of [...known.keys()]) {
-    if (listing.has(path)) continue;
-    unmirror(fs, path);
-    known.delete(path);
-  }
-  for (const root of message.roots) if (!mirrored.includes(root)) mirrored.push(root);
-  for (const root of mirrored) prune(fs, root, dirs, listing);
-  for (const dir of [...dirs].sort()) fs.mkdirTree(dir);
-  return [...listing].filter(([path, stamp]) => known.get(path) !== stamp).map(([path]) => path);
-}
-async function run(id, job) {
-  const fs = py.FS;
-  const out = (fd, text) => parentPort.postMessage({ id, type: "out", fd, text });
-  if (job.lazy) {
-    lazy = { id, flag: new Int32Array(job.lazy.flag), port: job.lazy.port };
-    attach(job.roots);
-  }
-  for (const [path, data, stamp] of job.files) {
-    fs.mkdirTree(parentOf(path));
-    fs.writeFile(path, data);
-    known.set(path, stamp);
-  }
-  fs.mkdirTree(job.cwd);
-  const messages = { messageCallback: () => {}, errorCallback: message => out(2, message + "\n") };
-  try {
-    if (job.kind === "pip" && !micropip) { await py.loadPackage("micropip", messages); micropip = true; }
-    if (job.kind === "module") await py.loadPackagesFromImports("import " + job.target, messages);
-    else if (job.kind !== "pip") await py.loadPackagesFromImports(job.target, messages);
-  } catch (error) {
-    out(2, job.name + ": " + (error && error.message || String(error)) + "\n");
-  }
-  let offset = 0;
-  py.setStdin({ isatty: false, read(buffer) { const count = Math.min(buffer.length, job.stdin.length - offset); buffer.set(job.stdin.subarray(offset, offset + count)); offset += count; return count; } });
-  const sink = fd => ({ isatty: false, write(buffer) { out(fd, decoder.decode(buffer)); return buffer.length; } });
-  py.setStdout(sink(1));
-  py.setStderr(sink(2));
-  py.setInterruptBuffer(new Int32Array(job.interrupt));
-  let status;
-  tracking = { dirty: new Set(), gone: new Set() };
-  try {
-    status = Number(await start(JSON.stringify({ kind: job.kind, target: job.target, argv: job.argv, filename: job.filename, cwd: job.cwd, env: job.env, path0: job.path0 })));
-  } finally {
-    py.setInterruptBuffer(undefined);
-  }
-  const found = changes(fs, job.roots);
-  tracking = null;
-  if (lazy) {
-    detach(job.roots);
-    lazy.port.close();
-    lazy = null;
-  }
-  for (const path of [...found.files.keys(), ...found.deleted]) known.delete(path);
-  parentPort.postMessage({ id, type: "done", status, files: found.files, dirs: found.dirs, deleted: found.deleted });
-}
-parentPort.on("message", async message => {
-  if (message.type === "cancel") { try { cancel && cancel(); } catch {} return; }
-  try {
-    await (loading ??= load());
-    if (message.type === "version") return parentPort.postMessage({ id: message.id, type: "done", version: String(py.runPython("import sys; sys.version.split()[0]")) });
-    if (message.type === "preload") { await py.loadPackage(message.packages, { messageCallback: () => {}, errorCallback: () => {} }); return parentPort.postMessage({ id: message.id, type: "done" }); }
-    if (message.type === "sync") return parentPort.postMessage({ id: message.id, type: "done", need: sync(message.sync) });
-    if (message.type === "stamps") { for (const [path, stamp] of message.stamps) known.set(path, stamp); return parentPort.postMessage({ id: message.id, type: "done" }); }
-    await run(message.id, message.job);
-  } catch (error) {
-    parentPort.postMessage({ id: message.id, type: "error", message: error && error.stack || String(error) });
-  }
-});
-`;
-	let remote;
-	let queue = Promise.resolve();
-	function threads() {
-		const process = globalThis.process;
-		if (typeof process?.versions?.node !== "string") return void 0;
-		try {
-			return process.getBuiltinModule?.("node:worker_threads");
-		} catch {
-			return;
-		}
-	}
-	function pythonWorkers() {
-		return threads() !== void 0 && typeof SharedArrayBuffer === "function" && typeof Atomics === "object";
-	}
-	function spawn(helper, cacheDir) {
-		const { Worker } = threads();
-		const port = new Worker(SOURCE, {
-			eval: true,
-			workerData: {
-				helper,
-				cacheDir,
-				from: {}.url ?? ""
-			}
-		});
-		const current = {
-			port,
-			pending: /* @__PURE__ */ new Map(),
-			next: 0
-		};
-		const fail = (error) => {
-			current.failed ??= error;
-			if (remote === current) remote = void 0;
-			for (const pending of current.pending.values()) pending.reject(error);
-			current.pending.clear();
-		};
-		port.on("message", (message) => {
-			const data = message;
-			const pending = current.pending.get(data.id);
-			if (!pending) return;
-			if (data.type === "out") return pending.output?.(data.fd ?? 1, data.text ?? "");
-			if (data.type === "fs") return pending.serve?.(data);
-			current.pending.delete(data.id);
-			if (!current.pending.size) port.unref?.();
-			if (data.type === "error") pending.reject(new Error(data.message ?? "python worker failed"));
-			else pending.resolve(data);
-		});
-		port.on("error", (error) => fail(error instanceof Error ? error : new Error(String(error))));
-		port.on("exit", (code) => fail(/* @__PURE__ */ new Error("the python worker exited with code " + String(code))));
-		port.unref?.();
-		return current;
-	}
-	function call(helper, cacheDir, message, output, transfer = [], serve) {
-		const current = remote ??= spawn(helper, cacheDir);
-		const id = ++current.next;
-		const result = new Promise((resolve, reject) => {
-			current.pending.set(id, {
-				resolve,
-				reject,
-				...output ? { output } : {},
-				...serve ? { serve } : {}
-			});
-		});
-		current.port.ref?.();
-		current.port.postMessage({
-			...message,
-			id
-		}, transfer);
-		return {
-			remote: current,
-			result
-		};
-	}
-	function serial(work) {
-		const task = queue.then(work);
-		queue = task.catch(() => {});
-		return task;
-	}
-	function workerVersion(helper, cacheDir) {
-		return serial(async () => String((await call(helper, cacheDir, { type: "version" }).result)["version"]));
-	}
-	function workerExclusive(work) {
-		return serial(work);
-	}
-	async function workerSync(helper, cacheDir, sync) {
-		return (await call(helper, cacheDir, {
-			type: "sync",
-			sync
-		}).result)["need"];
-	}
-	async function workerStamps(helper, cacheDir, stamps) {
-		await call(helper, cacheDir, {
-			type: "stamps",
-			stamps
-		}).result;
-	}
-	function workerRun(helper, cacheDir, ctx, job) {
-		return (async () => {
-			const interrupt = new SharedArrayBuffer(4);
-			const flag = new Int32Array(interrupt);
-			const deadline = Date.now() + ctx.limits.timeoutMs;
-			let failure;
-			const output = (fd, text) => {
-				try {
-					(fd === 2 ? ctx.stderr : ctx.stdout).write(text);
-				} catch (error) {
-					failure ??= error;
-				}
-			};
-			const channel = job.lazy ? new MessageChannel() : void 0;
-			const answered = new SharedArrayBuffer(4);
-			const serve = (request) => void answer(ctx.fs, String(request["op"]), String(request["path"])).then((reply) => reply, (error) => {
-				failure ??= error;
-				return { code: "EIO" };
-			}).then((reply) => {
-				channel?.port1.postMessage(reply);
-				Atomics.store(new Int32Array(answered), 0, 1);
-				Atomics.notify(new Int32Array(answered), 0);
-			});
-			const { remote: current, result } = call(helper, cacheDir, {
-				type: "run",
-				job: {
-					...job,
-					interrupt,
-					lazy: channel ? {
-						flag: answered,
-						port: channel.port2
-					} : void 0
-				}
-			}, output, channel ? [channel.port2] : [], channel ? serve : void 0);
-			let killed;
-			let stoppedAt = 0;
-			const watch = setInterval(() => {
-				if (!(failure !== void 0 || ctx.signal.aborted || Date.now() > deadline)) return;
-				stoppedAt ||= Date.now();
-				Atomics.store(flag, 0, 2);
-				current.port.postMessage({ type: "cancel" });
-				if (Date.now() - stoppedAt > 3e3 && !killed) {
-					killed = ctx.signal.aborted ? "interrupted" : failure !== void 0 ? "output" : "timeout";
-					current.port.terminate();
-				}
-			}, 50);
-			try {
-				const done = await result.catch((error) => {
-					if (killed) return void 0;
-					throw error;
-				});
-				if (!done) {
-					if (killed === "output") throw failure;
-					if (killed === "interrupted") throw new CommandError("interrupted", 130);
-					throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms (the python process was killed)", 124);
-				}
-				return {
-					status: Number(done["status"]),
-					changes: {
-						files: done["files"],
-						dirs: done["dirs"],
-						deleted: done["deleted"]
-					},
-					...failure !== void 0 ? { failure } : {}
-				};
-			} finally {
-				clearInterval(watch);
-				channel?.port1.close();
-			}
-		})();
-	}
-	async function answer(fs, op, path) {
-		try {
-			if (op === "read") return { value: await fs.read(path) };
-			const entries = [];
-			for (const name of await fs.list(path)) {
-				const stat = await fs.stat(path === "/" ? "/" + name : path + "/" + name);
-				if (stat) entries.push([
-					name,
-					stat.kind,
-					stat.size,
-					stat.mtime,
-					stat.mode
-				]);
-			}
-			return { value: entries };
-		} catch (error) {
-			if (error instanceof FsError) return { code: error.code };
-			throw error;
-		}
-	}
 	// src/bash/internal/commands/python.ts
 	init_Shell();
 	init_FileSystem();
 	init_Fs();
-	const THREADED_BYTES = 268435456;
-	const RESERVED = [
-		"/dev",
-		"/proc",
-		"/lib",
-		"/home/pyodide",
-		"/home/web_user"
-	];
-	const HELPER$1 = String.raw`
-import asyncio, json, os, signal, sys, traceback, types
-from pyodide.code import eval_code_async
-import warnings
-warnings.filterwarnings("ignore", message="The [xy] parameter as float was deprecated")
-sys.dont_write_bytecode = True
-_base = set(sys.modules)
-_active = False
-
-class Interrupted(Exception):
-    pass
-
-
-def _status(error):
-    code = error.code
-    if code is None:
-        return 0
-    if isinstance(code, bool) or not isinstance(code, int):
-        print(code, file=sys.stderr)
-        return 1
-    return code & 255
-
-def _internal(code):
-    name = code.co_filename
-    return name in ("<exec>", "<nanocode>") or name.startswith("/lib/python") and ("/_pyodide/" in name or "/pyodide/" in name or name.endswith("/runpy.py"))
-
-def _interrupt(signum, frame):
-    while _active and frame is not None:
-        if "/asyncio/" in frame.f_code.co_filename or frame.f_code.co_filename.endswith("/webloop.py"):
-            return
-        if not _internal(frame.f_code):
-            raise Interrupted()
-        frame = frame.f_back
-
-signal.signal(signal.SIGINT, _interrupt)
-
-_NETWORK = ("socket", "ssl", "http.client", "urllib.error", "urllib3", "requests", "httpx", "aiohttp")
-
-def _offline(error):
-    seen = set()
-    while error is not None and id(error) not in seen:
-        seen.add(id(error))
-        kind = type(error)
-        if isinstance(error, (ConnectionError, TimeoutError)) or kind.__module__.split(".")[0] in _NETWORK or kind.__module__ in _NETWORK or "TLS not supported" in str(error):
-            return True
-        tb = error.__traceback__
-        while isinstance(error, OSError) and tb is not None:
-            if tb.tb_frame.f_code.co_filename.endswith(("/socket.py", "/ssl.py", "/http/client.py", "/urllib/request.py")):
-                return True
-            tb = tb.tb_next
-        error = error.__cause__ or error.__context__
-    return False
-
-def _report(error):
-    tb = error.__traceback__
-    while tb is not None and _internal(tb.tb_frame.f_code):
-        tb = tb.tb_next
-    traceback.print_exception(type(error), error, tb)
-    if _offline(error):
-        print("python3: Python here runs on Pyodide (WebAssembly) and cannot open network connections. Download the file with curl in bash first (curl -sL -o data.json URL), then read it from Python.", file=sys.stderr)
-
-def _streams():
-    sys.stdin = open("/dev/stdin", "r", encoding="utf-8", errors="surrogateescape")
-    sys.stdout = open("/dev/stdout", "w", encoding="utf-8", errors="backslashreplace", buffering=1)
-    sys.stderr = open("/dev/stderr", "w", encoding="utf-8", errors="backslashreplace", buffering=1)
-
-async def _pip(args):
-    import micropip
-    if not args or args[0] in ("-h", "--help", "help"):
-        print("usage: pip install [-r FILE] [--no-deps] [--pre] [-i URL] PKG... | uninstall PKG... | list | freeze | show PKG")
-        return 0
-    if args[0] in ("-V", "--version"):
-        print("pip (micropip " + getattr(micropip, "__version__", "") + " on Pyodide)")
-        return 0
-    command, rest = args[0], args[1:]
-    if command == "install":
-        reqs, deps, pre, index, quiet, i = [], True, False, None, False, 0
-        while i < len(rest):
-            arg = rest[i]
-            if arg in ("-r", "--requirement") or arg.startswith("--requirement="):
-                if "=" in arg:
-                    path = arg.split("=", 1)[1]
-                else:
-                    i += 1
-                    path = rest[i]
-                for line in open(path).read().splitlines():
-                    line = line.split("#", 1)[0].strip()
-                    if line and not line.startswith("-"):
-                        reqs.append(line)
-            elif arg in ("-i", "--index-url"):
-                i += 1
-                index = rest[i]
-            elif arg.startswith("--index-url="):
-                index = arg.split("=", 1)[1]
-            elif arg == "--no-deps":
-                deps = False
-            elif arg == "--pre":
-                pre = True
-            elif arg in ("-q", "--quiet", "-qq", "-qqq"):
-                quiet = True
-            elif not arg.startswith("-"):
-                reqs.append("emfs:" + os.path.abspath(arg) if arg.endswith(".whl") and os.path.exists(arg) else arg)
-            i += 1
-        if not reqs:
-            print("ERROR: You must give at least one requirement to install", file=sys.stderr)
-            return 1
-        before = {name: package.version for name, package in micropip.list().items()}
-        try:
-            await micropip.install(reqs, deps=deps, pre=pre, index_urls=index)
-        except Exception as error:
-            print("ERROR: " + str(error), file=sys.stderr)
-            return 1
-        added = sorted(name + "-" + package.version for name, package in micropip.list().items() if before.get(name) != package.version)
-        if not quiet:
-            print("Successfully installed " + " ".join(added) if added else "Requirement already satisfied: " + " ".join(reqs))
-        return 0
-    if command == "uninstall":
-        installed = micropip.list()
-        for name in [arg for arg in rest if not arg.startswith("-")]:
-            if name not in installed:
-                print("WARNING: Skipping " + name + " as it is not installed.", file=sys.stderr)
-                continue
-            micropip.uninstall(name)
-            print("Successfully uninstalled " + name + "-" + installed[name].version)
-        return 0
-    if command in ("list", "freeze"):
-        packages = sorted(micropip.list().items(), key=lambda item: item[0].lower())
-        if command == "freeze":
-            for name, package in packages:
-                print(name + "==" + package.version)
-            return 0
-        width = max([len("Package")] + [len(name) for name, _ in packages])
-        print("Package".ljust(width) + " Version")
-        print("-" * width + " -------")
-        for name, package in packages:
-            print(name.ljust(width) + " " + package.version)
-        return 0
-    if command == "show":
-        from importlib import metadata
-        status = 0
-        for name in [arg for arg in rest if not arg.startswith("-")]:
-            try:
-                meta = metadata.metadata(name)
-            except metadata.PackageNotFoundError:
-                print("WARNING: Package(s) not found: " + name, file=sys.stderr)
-                status = 1
-                continue
-            for key in ("Name", "Version", "Summary", "Home-page", "Author", "License"):
-                print(key + ": " + (meta.get(key) or ""))
-            print("Requires: " + ", ".join(metadata.requires(name) or []))
-        return status
-    print("ERROR: unknown command " + repr(command) + " (supported: install, uninstall, list, freeze, show)", file=sys.stderr)
-    return 1
-
-_task = None
-
-def start(request):
-    global _task
-    _task = asyncio.ensure_future(run(request))
-    return _task
-
-def cancel():
-    if _task is not None and not _task.done():
-        _task.cancel()
-
-async def run(request):
-    global _active
-    request = json.loads(request)
-    kind, target, filename = request["kind"], request["target"], request["filename"]
-    os.chdir(request["cwd"])
-    os.environ.clear()
-    os.environ.update(request["env"])
-    sys.argv = request["argv"]
-    sys.path[0] = request["path0"]
-    _streams()
-    previous = sys.modules.get("__main__")
-    main = types.ModuleType("__main__")
-    main.__dict__["__builtins__"] = __builtins__
-    if kind == "file":
-        main.__file__ = filename
-    status = 0
-    try:
-        _active = True
-        if kind == "pip":
-            status = await _pip(request["argv"])
-        elif kind == "module":
-            import runpy
-            runpy.run_module(target, run_name="__main__", alter_sys=True)
-        else:
-            sys.modules["__main__"] = main
-            await eval_code_async(target, main.__dict__, return_mode="none", filename=filename, dedent=False)
-    except (Interrupted, asyncio.CancelledError):
-        status = -1
-    except SystemExit as error:
-        status = _status(error)
-    except KeyboardInterrupt:
-        print("KeyboardInterrupt", file=sys.stderr)
-        status = 130
-    except BaseException as error:
-        _report(error)
-        status = 1
-    finally:
-        _active = False
-        for stream in (sys.stdout, sys.stderr, sys.stdin):
-            try:
-                stream.close()
-            except Exception:
-                pass
-        if previous is not None:
-            sys.modules["__main__"] = previous
-        for name, module in list(sys.modules.items()):
-            path = getattr(module, "__file__", None)
-            if name not in _base and name != "__main__" and isinstance(path, str) and not path.startswith("/lib/"):
-                del sys.modules[name]
-    return status
-`;
-	let compiles$1;
-	const instances = /* @__PURE__ */ new WeakMap();
-	const defaultKey = {};
-	function canCompile() {
-		if (compiles$1 !== void 0) return compiles$1;
-		try {
-			new WebAssembly.Module(new Uint8Array([
-				0,
-				97,
-				115,
-				109,
-				1,
-				0,
-				0,
-				0
-			]));
-			compiles$1 = true;
-		} catch {
-			compiles$1 = false;
-		}
-		return compiles$1;
-	}
-	function inNode() {
-		return typeof globalThis.process?.versions?.node === "string";
-	}
-	function requireFromCwd(specifier) {
-		const process = globalThis.process;
-		const builtin = process?.getBuiltinModule?.("node:module");
-		if (!builtin?.createRequire || !process?.cwd) return void 0;
-		try {
-			return builtin.createRequire(process.cwd() + "/package.json")(specifier);
-		} catch {
-			return;
-		}
-	}
-	function packageCacheDir() {
-		return ((globalThis.process?.getBuiltinModule?.("node:os"))?.tmpdir?.() ?? "/tmp") + "/nanocode-pyodide-314.0.7";
-	}
-	async function loadDefault(options) {
-		const index = options.indexURL ?? "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
-		const candidates = inNode() && !options.indexURL ? ["pyodide"] : [index + "pyodide.mjs"];
-		const errors = [];
-		for (const specifier of candidates) {
-			let module;
-			try {
-				module = await import(specifier).catch((error) => {
-					if (specifier === "pyodide") throw error;
-					return new Function("specifier", "return import(specifier)")(specifier);
-				});
-			} catch (error) {
-				const required = specifier === "pyodide" ? requireFromCwd(specifier) : void 0;
-				if (!required) {
-					errors.push(specifier + ": " + (error instanceof Error ? error.message : String(error)));
-					continue;
-				}
-				module = required;
-			}
-			if (typeof module.loadPyodide !== "function") {
-				errors.push(specifier + " has no loadPyodide export");
-				continue;
-			}
-			return module.loadPyodide(specifier === "pyodide" ? {
-				packageCacheDir: packageCacheDir(),
-				stdout: () => {},
-				stderr: () => {}
-			} : {
-				indexURL: index,
-				stdout: () => {},
-				stderr: () => {}
-			});
-		}
-		throw new CommandError("cannot load Pyodide" + (inNode() ? " (install the pyodide npm package or set BashOptions.python.load)" : "") + ": " + errors.join("; "), 127);
-	}
-	function instance(options) {
-		const key = options.load ?? (options.indexURL ? options : defaultKey);
-		const cached = instances.get(key);
-		if (cached) return cached;
-		const created = (async () => {
-			const pyodide = await (options.load ? options.load() : loadDefault(options));
-			const namespace = pyodide.globals.get("dict")();
-			pyodide.runPython(HELPER$1, { globals: namespace });
-			return {
-				pyodide,
-				start: namespace.get("start"),
-				cancel: namespace.get("cancel"),
-				mirrored: /* @__PURE__ */ new Set(),
-				queue: Promise.resolve(),
-				micropip: false
-			};
-		})();
-		instances.set(key, created);
-		created.catch(() => instances.delete(key));
-		return created;
-	}
-	function threaded(options) {
-		return options.worker !== false && !options.load && !options.indexURL && pythonWorkers();
-	}
-	function reserved(path) {
-		return RESERVED.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
-	}
+	const NO_IMAGE = "python3 needs nanocode-ts's python.data beside python.wasm: pass it as Python's data option";
 	function join(base, name) {
 		return base === "/" ? "/" + name : base + "/" + name;
-	}
-	function within(path, dir) {
-		return path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
-	}
-	async function snapshot(fs, roots, maxBytes, maxFiles) {
-		const result = {
-			files: /* @__PURE__ */ new Map(),
-			dirs: /* @__PURE__ */ new Set(),
-			partial: /* @__PURE__ */ new Set(),
-			bytes: 0,
-			entries: 0,
-			left: 0,
-			leftBytes: 0
-		};
-		const queue = [...roots];
-		for (let index = 0; index < queue.length; index++) {
-			const path = queue[index];
-			if (reserved(path) || result.files.has(path) || result.dirs.has(path)) continue;
-			await breathe();
-			const stat = await fs.stat(path);
-			if (!stat) continue;
-			if (result.entries >= maxFiles || stat.kind === "file" && result.bytes + stat.size > maxBytes) {
-				result.partial.add(stat.kind === "file" ? parentOf(path) : path);
-				if (stat.kind === "file") {
-					result.left++;
-					result.leftBytes += stat.size;
-				}
-				continue;
-			}
-			result.entries++;
-			if (stat.kind === "file") {
-				const data = await fs.read(path);
-				result.bytes += data.length;
-				result.files.set(path, data);
-				continue;
-			}
-			result.dirs.add(path);
-			for (const name of await fs.list(path)) queue.push(join(path, name));
-		}
-		return result;
-	}
-	function unmirror(fs, path) {
-		if (reserved(path) || !fs.analyzePath(path).exists) return;
-		if (!fs.isDir(fs.stat(path).mode)) {
-			fs.unlink(path);
-			return;
-		}
-		for (const name of fs.readdir(path)) if (name !== "." && name !== "..") unmirror(fs, join(path, name));
-		if (path !== "/" && !RESERVED.some((prefix) => within(prefix, path))) fs.rmdir(path);
-	}
-	function mirror(fs, snap) {
-		for (const dir of snap.dirs) fs.mkdirTree(dir);
-		for (const [path, data] of snap.files) {
-			fs.mkdirTree(parentOf(path));
-			fs.writeFile(path, data);
-		}
-	}
-	function collect(fs, roots) {
-		const tree = {
-			files: /* @__PURE__ */ new Map(),
-			dirs: /* @__PURE__ */ new Set()
-		};
-		const visit = (path) => {
-			if (reserved(path) || tree.files.has(path) || tree.dirs.has(path) || !fs.analyzePath(path).exists) return;
-			const mode = fs.stat(path).mode;
-			if (fs.isFile(mode)) tree.files.set(path, fs.readFile(path));
-			if (!fs.isDir(mode)) return;
-			tree.dirs.add(path);
-			for (const name of fs.readdir(path)) if (name !== "." && name !== "..") visit(join(path, name));
-		};
-		for (const root of roots) visit(root);
-		return tree;
-	}
-	function same(a, b) {
-		if (a.length !== b.length) return false;
-		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-		return true;
-	}
-	async function writeBack$1(fs, snap, after) {
-		const partial = (path) => [...snap.partial].some((dir) => within(dir, path));
-		const removals = [...snap.files.keys(), ...snap.dirs].filter((path) => !after.files.has(path) && !after.dirs.has(path)).sort((a, b) => b.length - a.length);
-		for (const path of removals) {
-			if (snap.dirs.has(path) && partial(path)) continue;
-			await fs.remove(path).catch((error) => {
-				if (!(error instanceof FsError)) throw error;
-			});
-		}
-		for (const dir of [...after.dirs].sort()) if (!snap.dirs.has(dir)) await mkdirs(fs, dir);
-		for (const [path, data] of after.files) {
-			const before = snap.files.get(path);
-			if (before && same(before, data)) continue;
-			await breathe();
-			await mkdirs(fs, parentOf(path));
-			await fs.write(path, data);
-		}
 	}
 	function usage(name) {
 		return "usage: " + name + " [-c CMD | -m MOD | FILE | -] [ARGS...]";
@@ -32943,63 +33325,33 @@ async def run(request):
 			filename: ctx.resolve(file)
 		};
 	}
-	function pythonCommands(options = {}, psh) {
+	function pythonCommands(options = {}, psh, host) {
 		const maxBytes = options.maxBytes ?? 67108864;
-		const maxFiles = options.maxFiles ?? 2e4;
-		const mirror = {
-			id: "",
-			known: /* @__PURE__ */ new Map(),
-			adopted: /* @__PURE__ */ new Map()
-		};
-		let local = options.mirror ?? "";
-		const handler = async (context) => {
-			let ctx = context;
+		const handler = async (ctx) => {
 			const mode = parse$1(ctx, ctx.args.slice());
 			if (mode === "help") {
-				ctx.stdout.write(usage(ctx.name) + "\nPython on RustPython, with Pyodide 314.0.7 (CPython for WebAssembly) for packages and pip install through micropip\n");
+				ctx.stdout.write(usage(ctx.name) + "\nPython on nanocode-python (RustPython with compiled-in extensions); pip installs pure-Python wheels into /usr/local/lib/python3.14/site-packages\n");
 				return 0;
 			}
-			const compiled = mode !== "version" && mode.kind === "pip" ? void 0 : await rustModule(options);
-			if (compiled) {
-				const stdin = ctx.stdin.read();
-				const status = await executeRust(ctx, compiled, {
-					engine: psh === void 0 ? void 0 : await load$1(await psh),
-					fallback: options.remote !== void 0 || canCompile(),
-					maxBytes,
-					stdin,
-					cpuMs: options.cpuMs,
-					stepsPerMs: options.stepsPerMs
-				});
-				if (status !== void 0) return status;
-				ctx = {
-					...ctx,
-					stdin: new Input(stdin)
-				};
-			}
-			if (options.remote) {
-				if (!options.shared) mirror.id ||= options.mirror ?? crypto.randomUUID();
-				return executeRemote(ctx, options.remote, mode, maxBytes, maxFiles, mirror, options.batchBytes ?? 6291456, options.shared ?? false);
-			}
-			if (!canCompile()) {
-				ctx.stderr.write("python3 needs a host that can compile WebAssembly; this one can't\n");
+			if (mode !== "version" && mode.kind === "pip") return pip(ctx, mode.argv);
+			const compiled = await rustModule(options);
+			if (!compiled) {
+				ctx.stderr.write("python3 needs nanocode-ts's python.wasm: this host can't load it, so pass it as Python's module option\n");
 				return 126;
 			}
-			if (mode !== "version" && mode.kind === "file") {
-				const stat = await ctx.fs.stat(mode.filename);
-				if (!stat || stat.kind !== "file") {
-					ctx.stderr.write(ctx.name + ": can't open file '" + mode.filename + "': [Errno " + (stat ? "21] Is a directory" : "2] No such file or directory") + "\n");
-					return 2;
-				}
+			const missing = await rustImage(options, compiled);
+			if (missing) {
+				ctx.stderr.write(missing + "\n");
+				return 126;
 			}
-			const stdin = ctx.stdin.read();
-			if (threaded(options)) {
-				local ||= crypto.randomUUID();
-				return executeThreaded(ctx, mode, stdin, options.maxBytes ?? THREADED_BYTES, maxFiles, local);
-			}
-			const python = await instance(options);
-			const task = python.queue.then(() => execute$1(ctx, python, mode, stdin, maxBytes, maxFiles));
-			python.queue = task.catch(() => {});
-			return task;
+			return executeRust(ctx, compiled, {
+				engine: psh === void 0 ? void 0 : await load$1(await psh),
+				host,
+				maxBytes,
+				stdin: ctx.stdin.read(),
+				cpuMs: options.cpuMs,
+				stepsPerMs: options.stepsPerMs
+			});
 		};
 		return {
 			pip: handler,
@@ -33007,296 +33359,6 @@ async def run(request):
 			python: handler,
 			python3: handler
 		};
-	}
-	function unbase64(text) {
-		const raw = atob(text);
-		const bytes = new Uint8Array(raw.length);
-		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-		return bytes;
-	}
-	async function scan(fs, roots, maxBytes, maxFiles, maxFileBytes) {
-		const result = {
-			files: /* @__PURE__ */ new Map(),
-			dirs: /* @__PURE__ */ new Set(),
-			partial: /* @__PURE__ */ new Set(),
-			bytes: 0,
-			left: 0,
-			leftBytes: 0
-		};
-		const queue = [...roots];
-		let entries = 0;
-		for (let index = 0; index < queue.length; index++) {
-			const path = queue[index];
-			if (reserved(path) || result.files.has(path) || result.dirs.has(path)) continue;
-			if (index % 256 === 0) await breathe();
-			const stat = await fs.stat(path);
-			if (!stat) continue;
-			if (stat.kind === "file" && (entries >= maxFiles || result.bytes + stat.size > maxBytes || stat.size > maxFileBytes)) {
-				result.partial.add(parentOf(path));
-				result.left++;
-				result.leftBytes += stat.size;
-				continue;
-			}
-			if (stat.kind !== "file" && entries >= maxFiles) {
-				result.partial.add(path);
-				continue;
-			}
-			entries++;
-			if (stat.kind === "file") {
-				result.bytes += stat.size;
-				result.files.set(path, stat.size + ":" + stat.mtime);
-				continue;
-			}
-			result.dirs.add(path);
-			for (const name of await fs.list(path)) queue.push(join(path, name));
-		}
-		return result;
-	}
-	function leftOut(ctx, left, bytes, partial, limit) {
-		if (!left && !partial.size) return;
-		const where = [...partial].sort().slice(0, 3).join(", ");
-		ctx.stderr.write(ctx.name + ": warning: Python cannot see " + (left ? left + " file" + (left === 1 ? "" : "s") + " (" + (bytes / 1024 / 1024).toFixed(1) + " MiB) " : "some files ") + "under " + where + (partial.size > 3 ? " and " + (partial.size - 3) + " more directories" : "") + ", past " + limit + "; cd into the directory the script needs, or move large files out of it\n");
-	}
-	async function executeRemote(ctx, remote, mode, maxBytes, maxFiles, mirror, batchBytes, shared) {
-		const stdin = ctx.stdin.read();
-		const kind = mode === "version" ? "version" : mode.kind;
-		const roots = mode === "version" ? [] : [
-			ctx.cwd,
-			"/tmp",
-			...mode.kind === "file" ? [mode.filename] : []
-		].filter((root) => !reserved(root));
-		const unique = roots.filter((root, index) => roots.indexOf(root) === index && !roots.some((other) => other !== root && within(root, other)));
-		const target = mode === "version" ? "" : mode.kind === "file" ? "" : mode.kind === "stdin" ? stdin : mode.target;
-		const call = async (request) => {
-			try {
-				return await remote(request, ctx.signal);
-			} catch (error) {
-				if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-				throw new CommandError(ctx.name + ": " + (error instanceof Error ? error.message : String(error)), 127);
-			}
-		};
-		if (shared) {
-			const reply = await call({
-				name: ctx.name,
-				cwd: ctx.cwd,
-				env: {
-					...ctx.env,
-					PWD: ctx.cwd
-				},
-				roots: unique,
-				dirs: [],
-				timeoutMs: ctx.limits.timeoutMs,
-				kind,
-				target,
-				argv: mode === "version" ? [] : mode.argv,
-				filename: mode === "version" ? "" : mode.filename,
-				files: [],
-				stdin: mode !== "version" && mode.kind === "stdin" ? "" : stdin
-			});
-			if (reply.stdout) ctx.stdout.write(reply.stdout);
-			if (reply.stderr) ctx.stderr.write(reply.stderr);
-			if (reply.status >= 0) return reply.status;
-			if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-			throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
-		}
-		const send = async (request) => {
-			const adopted = [...mirror.adopted];
-			const reply = await call(adopted.length ? {
-				...request,
-				stamps: [...request.stamps ?? [], ...adopted]
-			} : request);
-			for (const [path, stamp] of adopted) if (mirror.adopted.get(path) === stamp) mirror.adopted.delete(path);
-			return reply;
-		};
-		const tree = await scan(ctx.fs, unique, maxBytes, maxFiles, maxBytes);
-		if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-		const base = {
-			name: ctx.name,
-			cwd: ctx.cwd,
-			env: {
-				...ctx.env,
-				PWD: ctx.cwd
-			},
-			roots: unique,
-			dirs: [...tree.dirs],
-			timeoutMs: ctx.limits.timeoutMs,
-			mirror: mirror.id,
-			binary: true
-		};
-		const control = {
-			...base,
-			dirs: [],
-			kind: "version",
-			target: "",
-			argv: [],
-			filename: "",
-			stdin: "",
-			keep: []
-		};
-		const stamped = (files) => files.map(([path]) => [path, tree.files.get(path)]);
-		const adopt = (path, stamp) => {
-			mirror.known.set(path, stamp);
-			mirror.adopted.set(path, stamp);
-		};
-		const upload = async (paths) => {
-			let batch = [];
-			let bytes = 0;
-			let sending;
-			const sync = async (files) => {
-				await sending;
-				sending = send({
-					...control,
-					files,
-					sync: true,
-					stamps: stamped(files)
-				}).then((reply) => {
-					if (reply.mirror !== mirror.id) throw new CommandError(ctx.name + ": this directory holds more than one upload and the Python service does not keep files between runs; run python3 from a smaller directory", 127);
-					for (const [sent] of files) mirror.known.set(sent, tree.files.get(sent));
-				});
-				sending.catch(() => {});
-			};
-			for (const path of paths) {
-				const data = await ctx.fs.read(path).catch(() => null);
-				if (!data) continue;
-				if (data.length > batchBytes) {
-					await sending;
-					for (let offset = 0; offset < data.length; offset += batchBytes) if ((await send({
-						...control,
-						files: [[path, data.subarray(offset, offset + batchBytes)]],
-						sync: true,
-						append: offset > 0,
-						...offset + batchBytes >= data.length ? { stamps: [[path, tree.files.get(path)]] } : {}
-					})).mirror !== mirror.id) throw new CommandError(ctx.name + ": " + path + " is larger than one upload and the Python service does not keep files between runs; move it out of this directory", 127);
-					mirror.known.set(path, tree.files.get(path));
-					continue;
-				}
-				if (batch.length && bytes + data.length > batchBytes) {
-					await sync(batch);
-					batch = [];
-					bytes = 0;
-				}
-				batch.push([path, data]);
-				bytes += data.length;
-			}
-			await sending;
-			return batch;
-		};
-		if (!mirror.known.size && tree.files.size) {
-			const listing = [...tree.files];
-			const reply = await send({
-				...control,
-				files: [],
-				sync: true,
-				listing
-			});
-			if (reply.mirror === mirror.id) {
-				const missing = new Set(reply.missing ?? []);
-				for (const [path, stamp] of listing) if (!missing.has(path)) mirror.known.set(path, stamp);
-			}
-		}
-		let pending = [...tree.files.keys()].filter((path) => mirror.known.get(path) !== tree.files.get(path));
-		let reply;
-		for (let attempt = 0;; attempt++) {
-			const files = await upload(pending);
-			const sent = new Set(files.map(([path]) => path));
-			const keep = [...tree.files.keys()].filter((path) => !sent.has(path) && mirror.known.get(path) === tree.files.get(path));
-			reply = await send({
-				...base,
-				kind,
-				target,
-				argv: mode === "version" ? [] : mode.argv,
-				filename: mode === "version" ? "" : mode.filename,
-				files,
-				keep,
-				stamps: stamped(files),
-				stdin: mode !== "version" && mode.kind === "stdin" ? "" : stdin
-			});
-			if (!reply.missing?.length || attempt >= 2) break;
-			for (const path of reply.missing) mirror.known.delete(path);
-			for (const [path] of files) mirror.known.set(path, tree.files.get(path));
-			pending = reply.missing.filter((path) => tree.files.has(path));
-		}
-		if (reply.mirror !== mirror.id) mirror.known.clear();
-		if (reply.missing?.length) throw new CommandError(ctx.name + ": the Python service kept losing this workspace's files; try again", 127);
-		leftOut(ctx, tree.left, tree.leftBytes, tree.partial, "the " + (maxBytes / 1024 / 1024).toFixed(0) + " MiB or " + maxFiles + "-file limit for Python");
-		if (reply.stdout) ctx.stdout.write(reply.stdout);
-		if (reply.stderr) ctx.stderr.write(reply.stderr);
-		if (unique.length) {
-			const changed = /* @__PURE__ */ new Map();
-			const large = new Map(reply.large ?? []);
-			for (const [path, data] of reply.files) if (data !== null) changed.set(path, data);
-			for (let more = reply.more ?? []; more.length;) {
-				const fetched = await send({
-					...control,
-					files: [],
-					fetch: more
-				});
-				for (const [path, data] of fetched.files) if (data !== null) changed.set(path, data);
-				for (const [path, size] of fetched.large ?? []) large.set(path, size);
-				more = fetched.more ?? [];
-				if (!fetched.files.length && !fetched.large?.length) break;
-			}
-			const present = new Set(reply.files.map(([path]) => path));
-			const dirs = new Set(reply.dirs);
-			const partial = (path) => [...tree.partial].some((dir) => within(dir, path));
-			const removals = [...tree.files.keys(), ...tree.dirs].filter((path) => !present.has(path) && !dirs.has(path)).sort((a, b) => b.length - a.length);
-			for (const path of removals) {
-				if (tree.dirs.has(path) && (partial(path) || dirs.has(path))) continue;
-				mirror.known.delete(path);
-				await ctx.fs.remove(path).catch((error) => {
-					if (!(error instanceof FsError)) throw error;
-				});
-			}
-			for (const dir of [...dirs].sort()) if (!tree.dirs.has(dir)) await mkdirs(ctx.fs, dir);
-			for (const [path, data] of reply.files) {
-				if (data !== null || !tree.files.has(path)) continue;
-				if (reply.mirror === mirror.id) mirror.known.set(path, tree.files.get(path));
-			}
-			for (const [path, data] of changed) {
-				await breathe();
-				await mkdirs(ctx.fs, parentOf(path));
-				await ctx.fs.write(path, typeof data === "string" ? unbase64(data) : data);
-				const stat = await ctx.fs.stat(path);
-				if (stat && reply.mirror === mirror.id) adopt(path, stat.size + ":" + stat.mtime);
-			}
-			for (const [path, size] of large) {
-				await mkdirs(ctx.fs, parentOf(path));
-				try {
-					for (let offset = 0; offset < size || offset === 0; offset += batchBytes) {
-						const data = (await send({
-							...control,
-							files: [],
-							fetch: [path],
-							range: [offset, batchBytes]
-						})).files[0]?.[1];
-						if (data == null) throw new CommandError(ctx.name + ": " + path + " changed while it was copied back", 127);
-						await ctx.fs.write(path, typeof data === "string" ? unbase64(data) : data, offset > 0);
-						if (offset + batchBytes >= size) break;
-					}
-				} catch (error) {
-					if (!(error instanceof FsError)) throw error;
-					await ctx.fs.remove(path).catch(() => {});
-					mirror.known.delete(path);
-					ctx.stderr.write(ctx.name + ": warning: " + path + " (" + (size / 1024 / 1024).toFixed(1) + " MiB) stays in the Python container: " + error.message + "\n");
-					continue;
-				}
-				const stat = await ctx.fs.stat(path);
-				if (stat && reply.mirror === mirror.id) adopt(path, stat.size + ":" + stat.mtime);
-			}
-		}
-		if (reply.status >= 0) return reply.status;
-		if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-		throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
-	}
-	function mountable(ctx, mode) {
-		const mounts = [
-			ctx.cwd,
-			"/tmp",
-			...mode.kind === "file" ? [parentOf(mode.filename)] : []
-		];
-		const roots = mounts.filter((root, index) => mounts.indexOf(root) === index && !mounts.some((other) => other !== root && within(root, other)));
-		const free = (root) => root !== "/" && !reserved(root) && !RESERVED.some((prefix) => within(prefix, root));
-		return roots.every(free) ? roots : void 0;
 	}
 	async function erase(fs, path) {
 		if ((await fs.stat(path))?.kind === "directory") for (const name of await fs.list(path)) await erase(fs, join(path, name));
@@ -33313,9 +33375,58 @@ async def run(request):
 			await fs.write(path, data);
 		}
 	}
+	function absent(missing) {
+		if (!missing.package) return missing.text;
+		const top = missing.module.split(".")[0];
+		return "python3: No module named '" + top + "' (nanocode's Python ships " + shippedModules.join(", ") + "; pure-Python packages: pip install " + top + ")";
+	}
+	let compiles$1;
+	function canCompile() {
+		if (compiles$1 !== void 0) return compiles$1;
+		try {
+			new WebAssembly.Module(new Uint8Array([
+				0,
+				97,
+				115,
+				109,
+				1,
+				0,
+				0,
+				0
+			]));
+			compiles$1 = true;
+		} catch {
+			compiles$1 = false;
+		}
+		return compiles$1;
+	}
 	const packagedRust = {};
 	const packagedPython = "../../../python.wasm";
-	const sitePackages = "/usr/local/lib/python3.14/site-packages";
+	const packagedImage = "../../../python.data";
+	const imageLoads = /* @__PURE__ */ new WeakMap();
+	async function packagedData() {
+		const fs = globalThis.process?.getBuiltinModule?.("node:fs");
+		const meta = {};
+		const url = meta.resolve ? new URL(meta.resolve("nanocode-ts/python.data")) : meta.url ? new URL(packagedImage, meta.url) : void 0;
+		if (!fs || !url) return void 0;
+		return fs.promises.readFile(url);
+	}
+	function rustImage(options, module) {
+		if (!needsImage(module)) return Promise.resolve(void 0);
+		let loading = imageLoads.get(module);
+		if (!loading) {
+			loading = (async () => {
+				const data = await (typeof options.data === "function" ? options.data() : options.data ?? packagedData());
+				if (!data) return NO_IMAGE;
+				await provide(module, data);
+			})().catch((error) => NO_IMAGE + ": " + (error instanceof Error ? error.message : String(error)));
+			imageLoads.set(module, loading);
+			loading.then((failed) => {
+				if (failed) imageLoads.delete(module);
+			});
+		}
+		return loading;
+	}
 	function rustModule(options) {
 		if (options.module === false) return Promise.resolve(void 0);
 		if (options.module) return Promise.resolve(options.module);
@@ -33331,6 +33442,20 @@ async def run(request):
 		return packagedRust.module;
 	}
 	const notFound = 127;
+	function changing(child) {
+		return {
+			status: refusedStatus,
+			stderr: encode(program(child.argv[0] ?? "") + ": python3 runs this command by running the script again up to it, and the script asked for a different command each time; make the command depend only on the files and earlier commands, not on the time or random numbers\n"),
+			stdout: /* @__PURE__ */ new Uint8Array()
+		};
+	}
+	function words(argv) {
+		return [program(argv[0] ?? ""), ...argv.slice(1)].map((word) => "'" + word.replaceAll("'", "'\\''") + "'").join(" ");
+	}
+	function shellScript(argv) {
+		const name = program(argv[0] ?? "");
+		return (name === "sh" || name === "bash") && argv[1] === "-c" && argv.length === 3 ? argv[2] : void 0;
+	}
 	const refusedStatus = 126;
 	const programs = ["/usr/bin/", "/bin/"];
 	function program(path) {
@@ -33343,10 +33468,25 @@ async def run(request):
 		const cpuMs = Math.min(ctx.limits.timeoutMs, options.cpuMs ?? ctx.limits.timeoutMs);
 		const deadline = Date.now() + ctx.limits.timeoutMs;
 		const cache = ctx.fs.sync ? void 0 : layered(ctx.fs, { limits: ctx.limits });
-		const files = ctx.fs.sync ?? cache?.files;
-		if (!files) return void 0;
+		const journal = create$1(ctx.fs.sync ?? cache.files, { bytes: ctx.limits.maxMemoryBytes });
+		const files = journal.files;
 		const engine = options.engine;
-		const spawn = engine && ((child) => {
+		const host = options.host;
+		const known = [];
+		let spawned = 0;
+		let replaced = false;
+		const tape = {
+			clock: [],
+			clockAt: 0,
+			random: [],
+			randomAt: 0,
+			time: [],
+			timeAt: 0
+		};
+		let pending;
+		const now = (child) => {
+			const name = program(child.argv[0] ?? "");
+			if (!engine) return "host";
 			const fs = {
 				list: async (path) => files.list(path),
 				mkdir: async (path) => files.mkdir(path),
@@ -33357,7 +33497,6 @@ async def run(request):
 				sync: files,
 				write: async (path, data, append) => files.write(path, data, append)
 			};
-			const name = program(child.argv[0] ?? "");
 			const ran = runNow(engine, {
 				commandFs: fs,
 				commands: /* @__PURE__ */ new Map(),
@@ -33376,15 +33515,16 @@ async def run(request):
 					output: ctx.limits.maxOutputLength
 				},
 				machine: void 0,
-				script: [name, ...child.argv.slice(1)].map((word) => "'" + word.replaceAll("'", "'\\''") + "'").join(" ") + (child.merged ? " 2>&1" : ""),
+				script: words(child.argv) + (child.merged ? " 2>&1" : ""),
 				shellLimits: ctx.limits,
 				signal: ctx.signal,
 				stdin: child.stdin,
 				strict: false,
 				without: ["curl", "wget"]
 			});
-			if (!ran) return "EAGAIN";
+			if (!ran) return host ? "host" : "EAGAIN";
 			if (ran.ended === "cancelled") return "EINTR";
+			if (host && ran.missing.some((missing) => host.has(missing))) return "host";
 			if (ran.ended === "exited" && ran.status === notFound && ran.missing.includes(name)) return "ENOENT";
 			if (ran.ended === "exited") return {
 				status: ran.status,
@@ -33396,258 +33536,190 @@ async def run(request):
 				stderr: encode(name + ": it ran more than this shell allows\n"),
 				stdout: ran.stdout
 			};
+		};
+		const spawn = (engine || host) && ((child) => {
+			if (pending) return "EAGAIN";
+			try {
+				return start(child);
+			} catch (error) {
+				if (error instanceof FsError) return error.code;
+				throw error;
+			}
 		});
-		const attempt = () => run(module, {
-			files,
-			request: {
-				argv: ctx.args,
-				cwd: ctx.cwd,
-				depth: ctx.limits.maxCallDepth,
-				env: {
-					...ctx.env,
-					PWD: ctx.cwd
-				},
-				file: limit,
-				memory: ctx.limits.maxMemoryBytes,
-				output: ctx.limits.maxOutputLength,
-				stdin: encode(options.stdin),
-				steps: options.stepsPerMs === void 0 ? Number.MAX_SAFE_INTEGER : Math.ceil(cpuMs * options.stepsPerMs),
-				timeMs: deadline - Date.now()
+		const start = (child) => {
+			const at = spawned++;
+			const key = JSON.stringify([
+				child.argv,
+				child.cwd,
+				child.env,
+				child.merged,
+				decode(child.stdin)
+			]);
+			const before = known[at];
+			if (before?.key === key) {
+				journal.replay(before.effects);
+				return before.exited;
+			}
+			if (before?.replaced) return changing(child);
+			if (before) known.length = at;
+			const mark = journal.mark();
+			const ran = now(child);
+			if (typeof ran === "object") {
+				if (!cache?.missed()) known.push({
+					effects: journal.capture(journal.touched(mark)),
+					exited: ran,
+					key,
+					replaced: false
+				});
+				return ran;
+			}
+			if (ran !== "host") return ran;
+			replaced = before !== void 0;
+			journal.rollback(mark);
+			const name = program(child.argv[0] ?? "");
+			if (shellScript(child.argv) === void 0 && !host.has(name)) return "ENOENT";
+			if (journal.overflowed()) return "ENOMEM";
+			pending = {
+				at,
+				child,
+				clock: tape.clockAt,
+				key,
+				mark,
+				random: tape.randomAt,
+				time: tape.timeAt
+			};
+			return "EAGAIN";
+		};
+		const request = () => ({
+			argv: ctx.args,
+			cwd: ctx.cwd,
+			depth: ctx.limits.maxCallDepth,
+			env: {
+				...ctx.env,
+				PWD: ctx.cwd
 			},
-			spawn,
-			stopped: () => ctx.signal.aborted || (cache?.missed() ?? false)
+			file: limit,
+			memory: ctx.limits.maxMemoryBytes,
+			output: ctx.limits.maxOutputLength,
+			stdin: encode(options.stdin),
+			steps: options.stepsPerMs === void 0 ? Number.MAX_SAFE_INTEGER : Math.ceil(cpuMs * options.stepsPerMs),
+			timeMs: deadline - Date.now()
 		});
-		await cache?.probe([ctx.cwd, sitePackages]);
-		let ran = attempt();
-		while (cache?.missed()) {
+		const stopped = () => ctx.signal.aborted || pending !== void 0 || (cache?.missed() ?? false);
+		const attempt = () => suspends ? runAsync(module, {
+			files,
+			fresh: known.length > 0,
+			request: request(),
+			retry,
+			spawn: suspended,
+			stopped,
+			tape
+		}) : Promise.resolve(run(module, {
+			files,
+			fresh: known.length > 0,
+			request: request(),
+			spawn,
+			stopped,
+			tape
+		}));
+		const retry = cache ? async () => {
+			if (!cache.missed()) return false;
 			await cache.fetch();
-			cache.reset();
-			ran = attempt();
+			cache.settle();
+			return true;
+		} : void 0;
+		const hosted = async (at, child, key) => {
+			const started = journal.mark();
+			const script = shellScript(child.argv) ?? words(child.argv);
+			const exited = await host.run({
+				cwd: child.cwd,
+				env: child.env,
+				fs: view(files, { retry }),
+				script: child.merged ? "{ " + script + "\n} 2>&1" : script,
+				signal: ctx.signal,
+				stdin: child.stdin
+			});
+			const touched = journal.touched(started);
+			let effects;
+			while (!effects) try {
+				effects = journal.capture(touched);
+			} catch (error) {
+				if (!retry || !await retry()) throw error;
+			}
+			known.length = at;
+			known.push({
+				effects,
+				exited,
+				key,
+				replaced
+			});
+			return exited;
+		};
+		const nests = (child) => child.argv.some((word) => word.includes("python")) && !fits(module, ctx.limits.maxMemoryBytes);
+		const resumed = async (child, at, mark) => {
+			for (;;) {
+				journal.rollback(mark);
+				spawned = at;
+				known.length = at;
+				pending = void 0;
+				await retry();
+				const ran = spawn(child);
+				if (!cache.missed()) return onward(child, at, ran);
+			}
+		};
+		const onward = (child, at, ran) => {
+			if (ran !== "EAGAIN" || !pending || !host || nests(pending.child)) return ran;
+			const { key } = pending;
+			pending = void 0;
+			return hosted(at, child, key).catch((error) => {
+				if (error instanceof FsError) return error.code;
+				throw error;
+			});
+		};
+		const suspended = spawn && ((child) => {
+			const at = spawned;
+			const mark = journal.mark();
+			const ran = spawn(child);
+			return cache?.missed() ? resumed(child, at, mark) : onward(child, at, ran);
+		});
+		const again = () => {
+			if (cache) cache.reset();
+			else journal.rollback({
+				first: 0,
+				changes: 0
+			});
+			journal.clear();
+			spawned = 0;
+			pending = void 0;
+			tape.clockAt = 0;
+			tape.randomAt = 0;
+			tape.timeAt = 0;
+			return attempt();
+		};
+		await cache?.probe([ctx.cwd, sitePackages]);
+		let ran = await attempt();
+		for (;;) {
+			if (cache?.missed()) {
+				await cache.fetch();
+				ran = await again();
+				continue;
+			}
+			if (!pending || !host || ctx.signal.aborted) break;
+			const { at, child, key, mark } = pending;
+			tape.clock.length = pending.clock;
+			tape.random.length = pending.random;
+			tape.time.length = pending.time;
+			journal.rollback(mark);
+			await hosted(at, child, key);
+			ran = await again();
 		}
 		if (cache) await apply(ctx.fs, cache.changes());
 		if (ran.kind !== "needs") return report(ctx, ran, {
 			cpuMs,
 			stepsPerMs: options.stepsPerMs
 		});
-		if (options.fallback && ran.missing.every((missing) => missing.package)) return void 0;
-		for (const missing of ran.missing) ctx.stderr.write(missing.text + "\n");
+		for (const missing of ran.missing) ctx.stderr.write(absent(missing) + "\n");
 		return 127;
-	}
-	async function executeThreaded(ctx, mode, stdin, maxBytes, maxFiles, mirror) {
-		if (mode === "version") {
-			ctx.stdout.write("Python " + await workerVersion(HELPER$1, packageCacheDir()) + "\n");
-			return 0;
-		}
-		const roots = [
-			ctx.cwd,
-			"/tmp",
-			...mode.kind === "file" ? [mode.filename] : []
-		].filter((root) => !reserved(root));
-		const unique = roots.filter((root, index) => roots.indexOf(root) === index && !roots.some((other) => other !== root && within(root, other)));
-		const target = mode.kind === "stdin" ? stdin : mode.kind === "file" ? new TextDecoder().decode(await ctx.fs.read(mode.filename)) : mode.target;
-		const env = {
-			...ctx.env,
-			PWD: ctx.cwd,
-			PYTHONDONTWRITEBYTECODE: "1"
-		};
-		const path0 = mode.kind === "file" ? parentOf(mode.filename) : mode.kind === "module" ? ctx.cwd : "";
-		const cacheDir = packageCacheDir();
-		const lazy = mountable(ctx, mode);
-		if (lazy) return workerExclusive(async () => {
-			const result = await workerRun(HELPER$1, cacheDir, ctx, {
-				kind: mode.kind,
-				name: ctx.name,
-				target,
-				argv: mode.argv,
-				filename: mode.filename,
-				cwd: ctx.cwd,
-				env,
-				path0,
-				roots: lazy,
-				files: [],
-				stdin: encode(mode.kind === "stdin" ? "" : stdin),
-				lazy: true
-			});
-			await apply(ctx.fs, result.changes);
-			if (result.failure !== void 0) throw result.failure;
-			if (result.status >= 0) return result.status;
-			if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-			throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
-		});
-		const done = await workerExclusive(async () => {
-			const listing = await scan(ctx.fs, unique, maxBytes, maxFiles, maxBytes);
-			leftOut(ctx, listing.left, listing.leftBytes, listing.partial, "the " + (maxBytes / 1024 / 1024).toFixed(0) + " MiB or " + maxFiles + "-file limit for Python");
-			if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-			const need = await workerSync(HELPER$1, cacheDir, {
-				mirror,
-				roots: unique,
-				files: [...listing.files],
-				dirs: [...listing.dirs]
-			});
-			const files = [];
-			for (const path of need) {
-				await breathe();
-				const data = await ctx.fs.read(path).catch(() => null);
-				if (data) files.push([
-					path,
-					data,
-					listing.files.get(path)
-				]);
-			}
-			const result = await workerRun(HELPER$1, cacheDir, ctx, {
-				kind: mode.kind,
-				name: ctx.name,
-				target,
-				argv: mode.argv,
-				filename: mode.filename,
-				cwd: ctx.cwd,
-				env,
-				path0,
-				roots: unique,
-				files,
-				stdin: encode(mode.kind === "stdin" ? "" : stdin)
-			});
-			const { changes } = result;
-			for (const path of [...changes.deleted].sort((a, b) => b.length - a.length)) await ctx.fs.remove(path).catch((error) => {
-				if (!(error instanceof FsError)) throw error;
-			});
-			for (const dir of [...changes.dirs].sort()) if (!listing.dirs.has(dir)) await mkdirs(ctx.fs, dir);
-			const stamps = [];
-			for (const [path, data] of changes.files) {
-				await breathe();
-				await mkdirs(ctx.fs, parentOf(path));
-				await ctx.fs.write(path, data);
-				const stat = await ctx.fs.stat(path);
-				if (stat) stamps.push([path, stat.size + ":" + stat.mtime]);
-			}
-			if (stamps.length) await workerStamps(HELPER$1, cacheDir, stamps);
-			return result;
-		});
-		if (done.failure !== void 0) throw done.failure;
-		if (done.status >= 0) return done.status;
-		if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-		throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
-	}
-	async function execute$1(ctx, python, mode, stdin, maxBytes, maxFiles) {
-		const pyodide = python.pyodide;
-		if (mode === "version") {
-			ctx.stdout.write("Python " + String(pyodide.runPython("import sys; sys.version.split()[0]")) + "\n");
-			return 0;
-		}
-		const roots = [
-			ctx.cwd,
-			"/tmp",
-			...mode.kind === "file" ? [mode.filename] : []
-		].filter((root) => !reserved(root));
-		const unique = roots.filter((root, index) => roots.indexOf(root) === index && !roots.some((other) => other !== root && within(root, other)));
-		pyodide.FS.chdir("/");
-		for (const path of python.mirrored) unmirror(pyodide.FS, path);
-		const mounts = ctx.fs.sync && mode.kind !== "pip" ? mountable(ctx, mode) : void 0;
-		const lazy = mounts && ctx.fs.sync ? attach(pyodide, ctx.fs.sync, mounts) : void 0;
-		python.mirrored = new Set(lazy ? [] : unique);
-		const snap = await snapshot(ctx.fs, lazy ? [] : unique, Math.min(maxBytes, Math.floor(ctx.limits.maxMemoryBytes / 2)), maxFiles);
-		leftOut(ctx, snap.left, snap.leftBytes, snap.partial, "the " + (Math.min(maxBytes, Math.floor(ctx.limits.maxMemoryBytes / 2)) / 1024 / 1024).toFixed(0) + " MiB or " + maxFiles + "-file limit for Python");
-		mirror(pyodide.FS, snap);
-		pyodide.FS.mkdirTree(ctx.cwd);
-		const messages = {
-			messageCallback: () => {},
-			errorCallback: (message) => ctx.stderr.write(message + "\n")
-		};
-		if (mode.kind === "stdin") mode.target = stdin;
-		if (mode.kind === "file") mode.target = new TextDecoder().decode(snap.files.get(mode.filename) ?? await ctx.fs.read(mode.filename));
-		try {
-			if (mode.kind === "pip" && !python.micropip) {
-				await pyodide.loadPackage("micropip", messages);
-				python.micropip = true;
-			}
-			if (mode.kind === "module") await pyodide.loadPackagesFromImports("import " + mode.target, messages);
-			else if (mode.kind !== "pip") await pyodide.loadPackagesFromImports(mode.target, messages);
-		} catch (error) {
-			ctx.stderr.write(ctx.name + ": " + (error instanceof Error ? error.message : String(error)) + "\n");
-		}
-		if (ctx.signal.aborted) throw new CommandError("interrupted", 130);
-		const deadline = Date.now() + ctx.limits.timeoutMs;
-		let failure;
-		let quiet = false;
-		let signalled = 0;
-		const stopped = () => !quiet && (failure !== void 0 || ctx.signal.aborted || Date.now() > deadline);
-		const input = encode(mode.kind === "stdin" ? "" : stdin);
-		let offset = 0;
-		const sink = (target) => {
-			return {
-				isatty: false,
-				flush: () => void 0,
-				write(buffer) {
-					try {
-						target.write(decode(buffer));
-					} catch (error) {
-						failure ??= error;
-					}
-					return buffer.length;
-				}
-			};
-		};
-		const stdout = sink(ctx.stdout);
-		const stderr = sink(ctx.stderr);
-		pyodide.setStdin({
-			isatty: false,
-			read(buffer) {
-				const count = Math.min(buffer.length, input.length - offset);
-				buffer.set(input.subarray(offset, offset + count));
-				offset += count;
-				return count;
-			}
-		});
-		pyodide.setStdout(stdout);
-		pyodide.setStderr(stderr);
-		pyodide.setInterruptBuffer({
-			get 0() {
-				if (!stopped() || Date.now() - signalled < 50) return 0;
-				signalled = Date.now();
-				return 2;
-			},
-			set 0(_value) {}
-		});
-		const env = {
-			...ctx.env,
-			PWD: ctx.cwd,
-			PYTHONDONTWRITEBYTECODE: "1"
-		};
-		const path0 = mode.kind === "file" ? parentOf(mode.filename) : mode.kind === "module" ? ctx.cwd : "";
-		const task = python.start(JSON.stringify({
-			kind: mode.kind,
-			target: mode.target,
-			argv: mode.argv,
-			filename: mode.filename,
-			cwd: ctx.cwd,
-			env,
-			path0
-		}));
-		const cancel = () => {
-			quiet = true;
-			try {
-				python.cancel();
-			} catch {}
-			quiet = false;
-		};
-		const timer = setTimeout(cancel, Math.max(0, deadline - Date.now()));
-		ctx.signal.addEventListener("abort", cancel, { once: true });
-		let status;
-		try {
-			status = Number(await task);
-		} finally {
-			clearTimeout(timer);
-			ctx.signal.removeEventListener("abort", cancel);
-			pyodide.setInterruptBuffer(void 0);
-			stdout.flush();
-			stderr.flush();
-		}
-		if (lazy) await apply(ctx.fs, lazy.finish());
-		else await writeBack$1(ctx.fs, snap, collect(pyodide.FS, unique));
-		if (failure !== void 0) throw failure;
-		if (status >= 0) return status;
-		if (ctx.signal.aborted && Date.now() <= deadline) throw new CommandError("interrupted", 130);
-		throw new CommandError("timed out after " + ctx.limits.timeoutMs + " ms", 124);
 	}
 	// src/bash/internal/commands/sed.ts
 	init_Shell();
@@ -34785,7 +34857,815 @@ async def run(request):
 		sponge,
 		uuidgen
 	};
+	// src/bash/internal/commands/wat.ts
+	var wat_exports = /* @__PURE__ */ __exportAll({
+		wat: () => wat,
+		wat2wasm: () => wat2wasm
+	});
+	function fail(message) {
+		throw new CommandError("wat2wasm: " + message, 1);
+	}
+	function tokenize(text) {
+		const encoder = new TextEncoder();
+		const stack = [[]];
+		let index = 0;
+		while (index < text.length) {
+			const char = text[index];
+			if (/\s/.test(char)) {
+				index++;
+				continue;
+			}
+			if (text.startsWith(";;", index)) {
+				const end = text.indexOf("\n", index);
+				index = end < 0 ? text.length : end + 1;
+				continue;
+			}
+			if (text.startsWith("(;", index)) {
+				const end = text.indexOf(";)", index + 2);
+				if (end < 0) fail("unterminated block comment");
+				index = end + 2;
+				continue;
+			}
+			if (char === "(") {
+				const list = [];
+				stack[stack.length - 1].push(list);
+				stack.push(list);
+				index++;
+				continue;
+			}
+			if (char === ")") {
+				if (stack.length < 2) fail("unexpected )");
+				stack.pop();
+				index++;
+				continue;
+			}
+			if (char === "\"") {
+				const bytes = [];
+				index++;
+				for (;;) {
+					if (index >= text.length) fail("unterminated string");
+					const next = text[index];
+					if (next === "\"") {
+						index++;
+						break;
+					}
+					if (next !== "\\") {
+						const end = text.slice(index).search(/["\\]/);
+						const chunk = end < 0 ? text.slice(index) : text.slice(index, index + end);
+						bytes.push(...encoder.encode(chunk));
+						index += chunk.length;
+						continue;
+					}
+					const escape = text[index + 1] ?? "";
+					if (escape in ESCAPES) {
+						bytes.push(ESCAPES[escape]);
+						index += 2;
+					} else if (escape === "u") {
+						const end = text.indexOf("}", index);
+						bytes.push(...encoder.encode(String.fromCodePoint(Number.parseInt(text.slice(index + 3, end), 16))));
+						index = end + 1;
+					} else if (/^[0-9a-fA-F]{2}$/.test(text.slice(index + 1, index + 3))) {
+						bytes.push(Number.parseInt(text.slice(index + 1, index + 3), 16));
+						index += 3;
+					} else fail("bad string escape \\" + escape);
+				}
+				stack[stack.length - 1].push({ bytes: new Uint8Array(bytes) });
+				continue;
+			}
+			const match = /^[^\s()";]+/.exec(text.slice(index));
+			if (!match) fail("unexpected " + JSON.stringify(char));
+			stack[stack.length - 1].push(match[0]);
+			index += match[0].length;
+		}
+		if (stack.length !== 1) fail("missing )");
+		return stack[0];
+	}
+	function unsigned(value) {
+		let rest = BigInt(value);
+		const out = [];
+		do {
+			let byte = Number(rest & 127n);
+			rest >>= 7n;
+			if (rest !== 0n) byte |= 128;
+			out.push(byte);
+		} while (rest !== 0n);
+		return out;
+	}
+	function signed(value) {
+		let rest = BigInt(value);
+		const out = [];
+		for (;;) {
+			const byte = Number(rest & 127n);
+			rest >>= 7n;
+			const done = rest === 0n && (byte & 64) === 0 || rest === -1n && (byte & 64) !== 0;
+			out.push(done ? byte : byte | 128);
+			if (done) return out;
+		}
+	}
+	function integer(atom, bits) {
+		if (typeof atom !== "string") fail("expected a number");
+		const clean = atom.replace(/_/g, "");
+		const negative = clean.startsWith("-");
+		const body = clean.replace(/^[+-]/, "");
+		if (!/^(0x[0-9a-fA-F]+|[0-9]+)$/.test(body)) fail("not an integer: " + atom);
+		let value = BigInt(body);
+		if (negative) value = -value;
+		const limit = 1n << BigInt(bits);
+		if (value >= limit || value < -(limit >> 1n)) fail("integer out of range: " + atom);
+		if (value >= limit >> 1n) value -= limit;
+		return value;
+	}
+	function float(atom, bits) {
+		if (typeof atom !== "string") fail("expected a float");
+		const clean = atom.replace(/_/g, "");
+		const negative = clean.startsWith("-");
+		const body = clean.replace(/^[+-]/, "");
+		const value = body === "inf" ? Infinity : body.startsWith("nan") ? NaN : /^0x/i.test(body) ? hexFloat(body) : Number(body);
+		if (Number.isNaN(value) && !body.startsWith("nan")) fail("not a float: " + atom);
+		const buffer = /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(bits / 8));
+		if (bits === 32) buffer.setFloat32(0, negative ? -value : value, true);
+		else buffer.setFloat64(0, negative ? -value : value, true);
+		return [...new Uint8Array(buffer.buffer)];
+	}
+	function hexFloat(body) {
+		const match = /^0x([0-9a-f]*)(?:\.([0-9a-f]*))?(?:p([+-]?\d+))?$/i.exec(body);
+		if (!match) return NaN;
+		return ((match[1] ? Number.parseInt(match[1], 16) : 0) + (match[2] ? Number.parseInt(match[2], 16) / 16 ** match[2].length : 0)) * 2 ** Number(match[3] ?? 0);
+	}
+	function vector(items) {
+		return [...unsigned(items.length), ...items.flat()];
+	}
+	function name(bytes) {
+		const encoded = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
+		return [...unsigned(encoded.length), ...encoded];
+	}
+	function head(node) {
+		return Array.isArray(node) && typeof node[0] === "string" ? node[0] : void 0;
+	}
+	function text$1(node) {
+		if (!node || typeof node === "string" || Array.isArray(node)) fail("expected a string");
+		return new TextDecoder().decode(node.bytes);
+	}
+	function valtype(atom) {
+		const value = typeof atom === "string" ? VALTYPES[atom] : void 0;
+		if (value === void 0) fail("unknown value type " + JSON.stringify(atom));
+		return value;
+	}
+	function wat2wasm(source) {
+		let fields = tokenize(source);
+		if (fields.length === 1 && head(fields[0]) === "module") fields = fields[0].slice(1).filter((field) => typeof field !== "string" || !field.startsWith("$"));
+		const types = [];
+		const typeNames = /* @__PURE__ */ new Map();
+		const funcNames = /* @__PURE__ */ new Map();
+		const globalNames = /* @__PURE__ */ new Map();
+		const memoryNames = /* @__PURE__ */ new Map();
+		const imports = [];
+		const funcs = [];
+		const globals = [];
+		const exports = [];
+		const datas = [];
+		const elems = [];
+		let tables = [];
+		let memories = [];
+		let start;
+		let importedFuncs = 0;
+		let importedGlobals = 0;
+		const signature = (params, results) => {
+			const key = params.join(",") + ":" + results.join(",");
+			const found = types.findIndex((type) => type.params.join(",") + ":" + type.results.join(",") === key);
+			if (found >= 0) return found;
+			types.push({
+				params,
+				results
+			});
+			return types.length - 1;
+		};
+		const typeUse = (items, names) => {
+			let explicit;
+			const params = [];
+			const results = [];
+			let rest = 0;
+			for (const item of items) {
+				const kind = head(item);
+				if (kind === "type") {
+					const ref = item[1];
+					explicit = typeof ref === "string" && ref.startsWith("$") ? typeNames.get(ref) ?? fail("unknown type " + ref) : Number(integer(ref ?? "", 32));
+				} else if (kind === "param") {
+					const parts = item.slice(1);
+					if (typeof parts[0] === "string" && parts[0].startsWith("$")) {
+						names?.set(parts[0], params.length);
+						params.push(valtype(parts[1]));
+					} else for (const part of parts) params.push(valtype(part));
+				} else if (kind === "result") for (const part of item.slice(1)) results.push(valtype(part));
+				else break;
+				rest++;
+			}
+			return {
+				type: explicit ?? signature(params, results),
+				rest,
+				params: explicit !== void 0 && !params.length ? types[explicit]?.params ?? [] : params
+			};
+		};
+		const exportsOf = (items) => {
+			const found = [];
+			let index = 0;
+			while (head(items[index] ?? "") === "export") found.push(text$1(items[index++][1]));
+			return {
+				found,
+				rest: index
+			};
+		};
+		const limits = (items) => {
+			const numbers = items.filter((item) => typeof item === "string" && /^[0-9]/.test(item)).map((item) => Number(integer(item, 64)));
+			if (!numbers.length) fail("limits need a minimum");
+			return numbers.length > 1 ? [
+				1,
+				...unsigned(numbers[0]),
+				...unsigned(numbers[1])
+			] : [0, ...unsigned(numbers[0])];
+		};
+		for (const field of fields) {
+			const kind = head(field);
+			const items = Array.isArray(field) ? field.slice(1) : [];
+			if (kind === "type") {
+				const label = typeof items[0] === "string" && items[0].startsWith("$") ? items.shift() : void 0;
+				const func = items[0];
+				if (head(func ?? "") !== "func") fail("type must be (func ...)");
+				const params = [];
+				const results = [];
+				for (const item of func.slice(1)) {
+					const parts = item.slice(1);
+					if (head(item) === "param") for (const part of parts) {
+						if (typeof part === "string" && part.startsWith("$")) continue;
+						params.push(valtype(part));
+					}
+					else if (head(item) === "result") for (const part of parts) results.push(valtype(part));
+				}
+				types.push({
+					params,
+					results
+				});
+				if (label) typeNames.set(label, types.length - 1);
+			}
+		}
+		for (const field of fields) {
+			const kind = head(field);
+			const items = Array.isArray(field) ? field.slice(1) : [];
+			if (kind === "import") {
+				const module = text$1(items[0]);
+				const field_ = text$1(items[1]);
+				const description = items[2];
+				const what = head(description);
+				const parts = description.slice(1);
+				const label = typeof parts[0] === "string" && parts[0].startsWith("$") ? parts.shift() : void 0;
+				if (what === "func") {
+					if (label) funcNames.set(label, importedFuncs);
+					importedFuncs++;
+					imports.push([
+						...name(module),
+						...name(field_),
+						0,
+						...unsigned(typeUse(parts).type)
+					]);
+				} else if (what === "memory") {
+					if (label) memoryNames.set(label, 0);
+					imports.push([
+						...name(module),
+						...name(field_),
+						2,
+						...limits(parts)
+					]);
+				} else if (what === "global") {
+					if (label) globalNames.set(label, importedGlobals);
+					importedGlobals++;
+					const type = parts[0];
+					imports.push([
+						...name(module),
+						...name(field_),
+						3,
+						...head(type) === "mut" ? [valtype(type[1]), 1] : [valtype(type), 0]
+					]);
+				} else fail("unsupported import kind " + what);
+			} else if (kind === "func") {
+				const label = typeof items[0] === "string" && items[0].startsWith("$") ? items.shift() : void 0;
+				const inline = head(items[0] ?? "") === "import" ? items.shift() : void 0;
+				const { found, rest } = exportsOf(items);
+				const afterExports = items.slice(rest);
+				const inlineImport = head(afterExports[0] ?? "") === "import" ? afterExports.shift() : inline;
+				if (inlineImport) {
+					if (label) funcNames.set(label, importedFuncs);
+					for (const exported of found) exports.push([
+						...name(exported),
+						0,
+						...unsigned(importedFuncs)
+					]);
+					importedFuncs++;
+					imports.push([
+						...name(text$1(inlineImport[1])),
+						...name(text$1(inlineImport[2])),
+						0,
+						...unsigned(typeUse(afterExports).type)
+					]);
+					continue;
+				}
+				const names = /* @__PURE__ */ new Map();
+				const use = typeUse(afterExports, names);
+				const body = afterExports.slice(use.rest);
+				const locals = [];
+				while (head(body[0] ?? "") === "local") {
+					const parts = body.shift().slice(1);
+					if (typeof parts[0] === "string" && parts[0].startsWith("$")) {
+						names.set(parts[0], use.params.length + locals.length);
+						locals.push(valtype(parts[1]));
+					} else for (const part of parts) locals.push(valtype(part));
+				}
+				funcs.push({
+					...label ? { name: label } : {},
+					type: use.type,
+					locals,
+					names,
+					body,
+					exports: found
+				});
+			}
+		}
+		for (const [index, func] of funcs.entries()) {
+			if (func.name) funcNames.set(func.name, importedFuncs + index);
+			for (const exported of func.exports) exports.push([
+				...name(exported),
+				0,
+				...unsigned(importedFuncs + index)
+			]);
+		}
+		const funcIndex = (ref) => typeof ref === "string" && ref.startsWith("$") ? funcNames.get(ref) ?? fail("unknown function " + ref) : Number(integer(ref ?? "", 32));
+		const globalIndex = (ref) => typeof ref === "string" && ref.startsWith("$") ? globalNames.get(ref) ?? fail("unknown global " + ref) : Number(integer(ref ?? "", 32));
+		const constant = (expr) => {
+			const parts = Array.isArray(expr) ? expr : [expr];
+			const op = parts[0];
+			if (op === "offset") return constant(parts[1]);
+			if (op === "i32.const") return [65, ...signed(integer(parts[1], 32))];
+			if (op === "i64.const") return [66, ...signed(integer(parts[1], 64))];
+			if (op === "f32.const") return [67, ...float(parts[1], 32)];
+			if (op === "f64.const") return [68, ...float(parts[1], 64)];
+			if (op === "global.get") return [35, ...unsigned(globalIndex(parts[1]))];
+			fail("unsupported constant expression " + JSON.stringify(op));
+		};
+		for (const field of fields) {
+			const kind = head(field);
+			const items = Array.isArray(field) ? field.slice(1) : [];
+			const label = typeof items[0] === "string" && items[0].startsWith("$") ? items.shift() : void 0;
+			if (kind === "memory") {
+				if (label) memoryNames.set(label, 0);
+				const { found, rest } = exportsOf(items);
+				for (const exported of found) exports.push([
+					...name(exported),
+					2,
+					0
+				]);
+				const parts = items.slice(rest);
+				const data = parts.find((part) => head(part) === "data");
+				if (data) {
+					const bytes = data.slice(1).flatMap((part) => typeof part === "object" && !Array.isArray(part) ? [...part.bytes] : []);
+					const pages = Math.max(1, Math.ceil(bytes.length / 65536));
+					memories = [[
+						1,
+						...unsigned(pages),
+						...unsigned(pages)
+					]];
+					datas.push([
+						0,
+						65,
+						0,
+						11,
+						...vector(bytes.map((byte) => [byte]))
+					]);
+				} else memories = [limits(parts)];
+			} else if (kind === "global") {
+				if (label) globalNames.set(label, importedGlobals + globals.length);
+				const { found, rest } = exportsOf(items);
+				for (const exported of found) exports.push([
+					...name(exported),
+					3,
+					...unsigned(importedGlobals + globals.length)
+				]);
+				const parts = items.slice(rest);
+				const type = parts[0];
+				globals.push([
+					...head(type) === "mut" ? [valtype(type[1]), 1] : [valtype(type), 0],
+					...constant(parts[1]),
+					11
+				]);
+			} else if (kind === "table") {
+				const { found, rest } = exportsOf(items);
+				for (const exported of found) exports.push([
+					...name(exported),
+					1,
+					0
+				]);
+				const parts = items.slice(rest);
+				const element = parts.find((part) => head(part) === "elem");
+				if (element) {
+					const refs = element.slice(1).map(funcIndex);
+					tables = [[
+						112,
+						1,
+						...unsigned(refs.length),
+						...unsigned(refs.length)
+					]];
+					elems.push([
+						0,
+						65,
+						0,
+						11,
+						...vector(refs.map((ref) => unsigned(ref)))
+					]);
+				} else tables = [[112, ...limits(parts.filter((part) => part !== "funcref" && part !== "anyfunc"))]];
+			} else if (kind === "elem") {
+				const offset = Array.isArray(items[0]) ? items.shift() : ["i32.const", "0"];
+				const refs = items.filter((item) => item !== "func").map(funcIndex);
+				elems.push([
+					0,
+					...constant(offset),
+					11,
+					...vector(refs.map((ref) => unsigned(ref)))
+				]);
+			} else if (kind === "data") {
+				if (head(items[0] ?? "") === "memory") items.shift();
+				const offset = Array.isArray(items[0]) ? items.shift() : ["i32.const", "0"];
+				const bytes = items.flatMap((part) => typeof part === "object" && !Array.isArray(part) ? [...part.bytes] : []);
+				datas.push([
+					0,
+					...constant(offset),
+					11,
+					...vector(bytes.map((byte) => [byte]))
+				]);
+			} else if (kind === "export") {
+				const exported = text$1(label === void 0 ? items[0] : items[0]);
+				const target = items[1];
+				const what = head(target);
+				const ref = target[1];
+				if (what === "func") exports.push([
+					...name(exported),
+					0,
+					...unsigned(funcIndex(ref))
+				]);
+				else if (what === "memory") exports.push([
+					...name(exported),
+					2,
+					0
+				]);
+				else if (what === "global") exports.push([
+					...name(exported),
+					3,
+					...unsigned(globalIndex(ref))
+				]);
+				else if (what === "table") exports.push([
+					...name(exported),
+					1,
+					0
+				]);
+				else fail("unsupported export kind " + what);
+			} else if (kind === "start") start = funcIndex(items[0] ?? label);
+			else if (kind !== "type" && kind !== "import" && kind !== "func") fail("unsupported module field " + JSON.stringify(kind ?? field));
+		}
+		const code = funcs.map((func) => {
+			const out = [];
+			const labels = [];
+			const local = (ref) => typeof ref === "string" && ref.startsWith("$") ? func.names.get(ref) ?? fail("unknown local " + ref) : Number(integer(ref ?? "", 32));
+			const depth = (ref) => {
+				if (typeof ref === "string" && ref.startsWith("$")) {
+					const found = labels.lastIndexOf(ref);
+					if (found < 0) fail("unknown label " + ref);
+					return labels.length - 1 - found;
+				}
+				return Number(integer(ref ?? "", 32));
+			};
+			const blockType = (items, at) => {
+				let index = at;
+				const label = typeof items[index] === "string" && items[index].startsWith("$") ? items[index++] : void 0;
+				const params = [];
+				const results = [];
+				let explicit;
+				while (Array.isArray(items[index]) && [
+					"result",
+					"param",
+					"type"
+				].includes(head(items[index]) ?? "")) {
+					const item = items[index++];
+					if (head(item) === "type") explicit = typeof item[1] === "string" && item[1].startsWith("$") ? typeNames.get(item[1]) ?? fail("unknown type " + item[1]) : Number(integer(item[1] ?? "", 32));
+					else for (const part of item.slice(1)) (head(item) === "result" ? results : params).push(valtype(part));
+				}
+				return {
+					label,
+					encoded: explicit !== void 0 ? signed(explicit) : !params.length && !results.length ? [64] : !params.length && results.length === 1 ? [results[0]] : signed(signature(params, results)),
+					next: index
+				};
+			};
+			const immediates = (op, items, at) => {
+				let index = at;
+				const take = () => items[index++];
+				if (op in SIMPLE) {
+					out.push(...SIMPLE[op]);
+					return index;
+				}
+				if (op in MEMORY) {
+					const [opcode, natural] = MEMORY[op];
+					let offset = 0;
+					let align = natural;
+					while (typeof items[index] === "string" && /^(offset|align)=/.test(items[index])) {
+						const [key, value] = take().split("=");
+						if (key === "offset") offset = Number(integer(value ?? "", 64));
+						else align = Math.log2(Number(value));
+					}
+					out.push(opcode, ...unsigned(align), ...unsigned(offset));
+					return index;
+				}
+				switch (op) {
+					case "i32.const":
+						out.push(65, ...signed(integer(take(), 32)));
+						return index;
+					case "i64.const":
+						out.push(66, ...signed(integer(take(), 64)));
+						return index;
+					case "f32.const":
+						out.push(67, ...float(take(), 32));
+						return index;
+					case "f64.const":
+						out.push(68, ...float(take(), 64));
+						return index;
+					case "local.get":
+						out.push(32, ...unsigned(local(take())));
+						return index;
+					case "local.set":
+						out.push(33, ...unsigned(local(take())));
+						return index;
+					case "local.tee":
+						out.push(34, ...unsigned(local(take())));
+						return index;
+					case "global.get":
+						out.push(35, ...unsigned(globalIndex(take())));
+						return index;
+					case "global.set":
+						out.push(36, ...unsigned(globalIndex(take())));
+						return index;
+					case "call":
+						out.push(16, ...unsigned(funcIndex(take())));
+						return index;
+					case "call_indirect": {
+						const use = [];
+						while (Array.isArray(items[index]) && [
+							"type",
+							"param",
+							"result"
+						].includes(head(items[index]) ?? "")) use.push(take());
+						out.push(17, ...unsigned(typeUse(use).type), 0);
+						return index;
+					}
+					case "br":
+						out.push(12, ...unsigned(depth(take())));
+						return index;
+					case "br_if":
+						out.push(13, ...unsigned(depth(take())));
+						return index;
+					case "br_table": {
+						const targets = [];
+						while (typeof items[index] === "string" && (/^\$/.test(items[index]) || /^[0-9]/.test(items[index]))) targets.push(depth(take()));
+						const fallback = targets.pop();
+						if (fallback === void 0) fail("br_table needs a default label");
+						out.push(14, ...vector(targets.map((target) => unsigned(target))), ...unsigned(fallback));
+						return index;
+					}
+					default: fail("unknown instruction " + op);
+				}
+			};
+			const flat = (items) => {
+				let index = 0;
+				while (index < items.length) {
+					const item = items[index];
+					if (Array.isArray(item)) {
+						folded(item);
+						index++;
+						continue;
+					}
+					if (typeof item !== "string") fail("unexpected string in function body");
+					const op = ALIASES[item] ?? item;
+					index++;
+					if (op === "block" || op === "loop" || op === "if") {
+						const type = blockType(items, index);
+						index = type.next;
+						labels.push(type.label);
+						out.push(op === "block" ? 2 : op === "loop" ? 3 : 4, ...type.encoded);
+					} else if (op === "else") {
+						out.push(5);
+						if (typeof items[index] === "string" && items[index].startsWith("$")) index++;
+					} else if (op === "end") {
+						labels.pop();
+						out.push(11);
+						if (typeof items[index] === "string" && items[index].startsWith("$")) index++;
+					} else index = immediates(op, items, index);
+				}
+			};
+			const folded = (node) => {
+				const op = ALIASES[head(node) ?? ""] ?? head(node);
+				if (!op) fail("expected an instruction");
+				if (op === "block" || op === "loop") {
+					const type = blockType(node, 1);
+					labels.push(type.label);
+					out.push(op === "block" ? 2 : 3, ...type.encoded);
+					flat(node.slice(type.next));
+					labels.pop();
+					out.push(11);
+					return;
+				}
+				if (op === "if") {
+					const type = blockType(node, 1);
+					let rest = node.slice(type.next);
+					const conditions = rest.filter((part) => head(part) !== "then" && head(part) !== "else");
+					for (const condition of conditions) folded(condition);
+					rest = rest.filter((part) => head(part) === "then" || head(part) === "else");
+					labels.push(type.label);
+					out.push(4, ...type.encoded);
+					for (const part of rest) {
+						if (head(part) === "else") out.push(5);
+						flat(part.slice(1));
+					}
+					labels.pop();
+					out.push(11);
+					return;
+				}
+				const atoms = [op];
+				let index = 1;
+				while (index < node.length && (!Array.isArray(node[index]) || [
+					"type",
+					"param",
+					"result"
+				].includes(head(node[index]) ?? ""))) atoms.push(node[index++]);
+				for (const child of node.slice(index)) folded(child);
+				immediates(op, atoms, 1);
+			};
+			flat(func.body);
+			const groups = [];
+			for (const type of func.locals) {
+				const last = groups[groups.length - 1];
+				if (last && last[1] === type) last[0]++;
+				else groups.push([1, type]);
+			}
+			const body = [
+				...vector(groups.map(([count, type]) => [...unsigned(count), type])),
+				...out,
+				11
+			];
+			return [...unsigned(body.length), ...body];
+		});
+		const section = (id, payload) => payload.length ? [
+			id,
+			...unsigned(payload.length),
+			...payload
+		] : [];
+		const bytes = [
+			0,
+			97,
+			115,
+			109,
+			1,
+			0,
+			0,
+			0,
+			...types.length ? section(1, vector(types.map((type) => [
+				96,
+				...vector(type.params.map((value) => [value])),
+				...vector(type.results.map((value) => [value]))
+			]))) : [],
+			...imports.length ? section(2, vector(imports)) : [],
+			...funcs.length ? section(3, vector(funcs.map((func) => unsigned(func.type)))) : [],
+			...tables.length ? section(4, vector(tables)) : [],
+			...memories.length ? section(5, vector(memories)) : [],
+			...globals.length ? section(6, vector(globals)) : [],
+			...exports.length ? section(7, vector(exports)) : [],
+			...start !== void 0 ? section(8, unsigned(start)) : [],
+			...elems.length ? section(9, vector(elems)) : [],
+			...funcs.length ? section(10, vector(code)) : [],
+			...datas.length ? section(11, vector(datas)) : []
+		];
+		return new Uint8Array(bytes);
+	}
+	var VALTYPES, SIMPLE, NUMERIC, MEMORY, ALIASES, ESCAPES, wat;
+	var init_wat = __esmMin(() => {
+		init_Shell();
+		VALTYPES = {
+			i32: 127,
+			i64: 126,
+			f32: 125,
+			f64: 124,
+			v128: 123,
+			funcref: 112,
+			externref: 111
+		};
+		SIMPLE = {
+			unreachable: [0],
+			nop: [1],
+			return: [15],
+			drop: [26],
+			select: [27],
+			"memory.size": [63, 0],
+			"memory.grow": [64, 0],
+			current_memory: [63, 0],
+			grow_memory: [64, 0],
+			"memory.copy": [
+				252,
+				10,
+				0,
+				0
+			],
+			"memory.fill": [
+				252,
+				11,
+				0
+			]
+		};
+		NUMERIC = [
+			"i32.eqz i32.eq i32.ne i32.lt_s i32.lt_u i32.gt_s i32.gt_u i32.le_s i32.le_u i32.ge_s i32.ge_u",
+			"i64.eqz i64.eq i64.ne i64.lt_s i64.lt_u i64.gt_s i64.gt_u i64.le_s i64.le_u i64.ge_s i64.ge_u",
+			"f32.eq f32.ne f32.lt f32.gt f32.le f32.ge f64.eq f64.ne f64.lt f64.gt f64.le f64.ge",
+			"i32.clz i32.ctz i32.popcnt i32.add i32.sub i32.mul i32.div_s i32.div_u i32.rem_s i32.rem_u i32.and i32.or i32.xor i32.shl i32.shr_s i32.shr_u i32.rotl i32.rotr",
+			"i64.clz i64.ctz i64.popcnt i64.add i64.sub i64.mul i64.div_s i64.div_u i64.rem_s i64.rem_u i64.and i64.or i64.xor i64.shl i64.shr_s i64.shr_u i64.rotl i64.rotr",
+			"f32.abs f32.neg f32.ceil f32.floor f32.trunc f32.nearest f32.sqrt f32.add f32.sub f32.mul f32.div f32.min f32.max f32.copysign",
+			"f64.abs f64.neg f64.ceil f64.floor f64.trunc f64.nearest f64.sqrt f64.add f64.sub f64.mul f64.div f64.min f64.max f64.copysign",
+			"i32.wrap_i64 i32.trunc_f32_s i32.trunc_f32_u i32.trunc_f64_s i32.trunc_f64_u i64.extend_i32_s i64.extend_i32_u i64.trunc_f32_s i64.trunc_f32_u i64.trunc_f64_s i64.trunc_f64_u",
+			"f32.convert_i32_s f32.convert_i32_u f32.convert_i64_s f32.convert_i64_u f32.demote_f64 f64.convert_i32_s f64.convert_i32_u f64.convert_i64_s f64.convert_i64_u f64.promote_f32",
+			"i32.reinterpret_f32 i64.reinterpret_f64 f32.reinterpret_i32 f64.reinterpret_i64 i32.extend8_s i32.extend16_s i64.extend8_s i64.extend16_s i64.extend32_s"
+		].join(" ").split(" ");
+		for (const [index, name] of NUMERIC.entries()) SIMPLE[name] = [69 + index];
+		MEMORY = {
+			"i32.load": [40, 2],
+			"i64.load": [41, 3],
+			"f32.load": [42, 2],
+			"f64.load": [43, 3],
+			"i32.load8_s": [44, 0],
+			"i32.load8_u": [45, 0],
+			"i32.load16_s": [46, 1],
+			"i32.load16_u": [47, 1],
+			"i64.load8_s": [48, 0],
+			"i64.load8_u": [49, 0],
+			"i64.load16_s": [50, 1],
+			"i64.load16_u": [51, 1],
+			"i64.load32_s": [52, 2],
+			"i64.load32_u": [53, 2],
+			"i32.store": [54, 2],
+			"i64.store": [55, 3],
+			"f32.store": [56, 2],
+			"f64.store": [57, 3],
+			"i32.store8": [58, 0],
+			"i32.store16": [59, 1],
+			"i64.store8": [60, 0],
+			"i64.store16": [61, 1],
+			"i64.store32": [62, 2]
+		};
+		ALIASES = {
+			get_local: "local.get",
+			set_local: "local.set",
+			tee_local: "local.tee",
+			get_global: "global.get",
+			set_global: "global.set",
+			"i32.wrap/i64": "i32.wrap_i64"
+		};
+		ESCAPES = {
+			n: 10,
+			t: 9,
+			r: 13,
+			"\"": 34,
+			"'": 39,
+			"\\": 92
+		};
+		wat = async (ctx) => {
+			let input;
+			let output;
+			for (let index = 0; index < ctx.args.length; index++) {
+				const arg = ctx.args[index];
+				if (arg === "-o" || arg === "--output") output = ctx.args[++index];
+				else if (arg.startsWith("--output=")) output = arg.slice(9);
+				else if (arg === "-h" || arg === "--help") {
+					ctx.stdout.write("usage: wat2wasm FILE.wat [-o FILE.wasm]\nAssembles WebAssembly text (flat or folded instructions, MVP opcodes, memory, data, globals, tables, imports such as WASI's) into a binary module.\n");
+					return 0;
+				} else if (arg.startsWith("-") && arg !== "-") continue;
+				else input = arg;
+			}
+			if (input === void 0) throw new CommandError("usage: wat2wasm FILE.wat [-o FILE.wasm]", 2);
+			const bytes = wat2wasm(input === "-" ? await ctx.stdin.text() : new TextDecoder().decode(await ctx.fs.read(ctx.resolve(input))));
+			const validate = globalThis.WebAssembly?.validate;
+			let valid = true;
+			try {
+				if (validate) valid = validate(bytes);
+			} catch {}
+			if (!valid) ctx.stderr.write("wat2wasm: warning: the assembled module does not validate; check operand types and stack balance\n");
+			const target = output ?? (input === "-" ? "out.wasm" : input.replace(/\.wat$/, "") + ".wasm");
+			if (target === "-") ctx.stdout.write(String.fromCharCode(...bytes));
+			else await ctx.fs.write(ctx.resolve(target), bytes);
+			return valid ? 0 : 1;
+		};
+	});
 	// src/bash/internal/commands/engine.ts
+	init_wat();
 	init_Shell();
 	var Trap = class extends Error {
 		constructor(message) {
@@ -35422,12 +36302,12 @@ async def run(request):
 			return 1;
 		}
 	}
-	function text$1(raw) {
+	function text(raw) {
 		return new TextDecoder().decode(new Uint8Array(raw.memory.buffer, raw.out_ptr() >>> 0, raw.out_len() >>> 0));
 	}
 	function lines(raw, count) {
 		if (count <= 0) return [];
-		return text$1(raw).split("\n").map((line) => line.split("	"));
+		return text(raw).split("\n").map((line) => line.split("	"));
 	}
 	function signature(params, results) {
 		return {
@@ -35463,7 +36343,7 @@ async def run(request):
 	function interpret(state, bytes, options) {
 		const raw = state.raw;
 		const id = guard(state, () => withBytes(raw, bytes, (pointer) => raw.load(pointer, bytes.length)));
-		if (id < 0) throw new Trap(text$1(raw));
+		if (id < 0) throw new Trap(text(raw));
 		state.live++;
 		let dropped = false;
 		const imports = lines(raw, raw.imports(id)).map(([module = "", name = "", kind = "", params, results]) => ({
@@ -35503,8 +36383,8 @@ async def run(request):
 					const thrown = state.thrown;
 					state.thrown = void 0;
 					if (thrown) throw thrown.error;
-					if (instance === -2) throw new Trap(text$1(raw));
-					const failure = new Error(text$1(raw));
+					if (instance === -2) throw new Trap(text(raw));
+					const failure = new Error(text(raw));
 					failure.name = "LinkError";
 					throw failure;
 				}
@@ -35574,8 +36454,8 @@ async def run(request):
 							state.thrown = void 0;
 							if (thrown) throw thrown.error;
 						}
-						if (status === 1) throw new Trap(text$1(raw));
-						if (status !== 0) throw new Error(text$1(raw));
+						if (status === 1) throw new Trap(text(raw));
+						if (status !== 0) throw new Error(text(raw));
 						view = machineView(state);
 						const results = types.results.map((type, index) => readSlot(view, slots + index * 8, type));
 						if (results.length > 1) return results;
@@ -35590,6 +36470,9 @@ async def run(request):
 	init_FileSystem();
 	init_Fs();
 	const SNAPSHOT_BYTES = 67108864;
+	const HEADER_BYTES = 8;
+	const WAT_TEXT = /^\s*(\(|;;)/;
+	const WAT_HINT = "; hand-encoded bytes are easy to get wrong, and WebAssembly text (WAT) is accepted in their place, such as (module (func (export \"add\") (param i32 i32) (result i32) local.get 0 local.get 1 i32.add))";
 	const SNAPSHOT_ENTRIES = 2e4;
 	const MODULES = /* @__PURE__ */ new Map();
 	const INTERPRETED_CACHE_BYTES = 4194304;
@@ -35772,7 +36655,16 @@ async def run(request):
 		loaded.dispose();
 	}
 	function isWasm(bytes) {
-		return bytes.length >= 8 && bytes[0] === 0 && bytes[1] === 97 && bytes[2] === 115 && bytes[3] === 109;
+		return bytes.length >= HEADER_BYTES && bytes[0] === 0 && bytes[1] === 97 && bytes[2] === 115 && bytes[3] === 109;
+	}
+	function moduleBytes(bytes) {
+		if (isWasm(bytes)) return bytes;
+		const text = decode(bytes);
+		return WAT_TEXT.test(text) ? wat2wasm(text) : void 0;
+	}
+	function notModule(bytes) {
+		const head = Array.from(bytes.subarray(0, HEADER_BYTES), (byte) => byte.toString(16).padStart(2, "0")).join(" ");
+		return "not a WebAssembly module: a binary module starts with 00 61 73 6d (\\0asm) and these " + bytes.length + " bytes start with " + (head || "nothing") + "; pass the binary module or its WebAssembly text (WAT)";
 	}
 	function parse(ctx) {
 		const args = ctx.args.slice();
@@ -35840,8 +36732,9 @@ async def run(request):
 		const stat = await ctx.fs.stat(path);
 		if (!stat) throw new CommandError(run.file + ": No such file or directory", 127);
 		if (stat.kind !== "file") throw new CommandError(run.file + ": Is a directory", 126);
-		const bytes = await ctx.fs.read(path);
-		if (!isWasm(bytes)) throw new CommandError(run.file + ": not a WebAssembly module (no \\0asm header)", 126);
+		const read = await ctx.fs.read(path);
+		const bytes = moduleBytes(read);
+		if (!bytes) throw new CommandError(run.file + ": " + notModule(read), 126);
 		const module = await compile(bytes, budgeted$1(options, ctx.limits));
 		const tree = new Tree();
 		tree.limit = Math.min(SNAPSHOT_BYTES, Math.floor(ctx.limits.maxMemoryBytes / 2));
@@ -35882,7 +36775,7 @@ async def run(request):
 			flags: 0
 		});
 		const preopens = run.dirs.length ? run.dirs.map((dir) => ({
-			path: normalize(dir.host.startsWith("/") ? dir.host : ctx.cwd + "/" + dir.host),
+			path: normalize$1(dir.host.startsWith("/") ? dir.host : ctx.cwd + "/" + dir.host),
 			guest: dir.guest
 		})) : [{
 			path: "/",
@@ -35924,10 +36817,10 @@ async def run(request):
 			const slash = /[^/]\/+$/.test(raw);
 			if (raw.includes("\0")) return E.INVAL;
 			if (raw.startsWith("/")) return E.PERM;
-			const local = normalize(handle.path + "/" + raw);
+			const local = normalize$1(handle.path + "/" + raw);
 			if (local !== handle.root && !local.startsWith(handle.root === "/" ? "/" : handle.root + "/")) return E.PERM;
 			if (handle.preopen === "." && !tree.find(local)) {
-				const absolute = normalize("/" + raw);
+				const absolute = normalize$1("/" + raw);
 				if (tree.find(absolute) || !tree.find(parentOf(local)) && tree.find(parentOf(absolute))) return {
 					path: absolute,
 					slash
@@ -36534,13 +37427,18 @@ async def run(request):
 			if (request.module_bytes instanceof Uint8Array) return { bytes: request.module_bytes };
 			if (typeof request.module === "string") return { bytes: fromBase64(request.module) };
 			if (typeof request.path !== "string") throw new Error("wasm expects the module's bytes or a path");
-			const path = normalize(request.path.startsWith("/") ? request.path : shell.cwd + "/" + request.path);
+			const path = normalize$1(request.path.startsWith("/") ? request.path : shell.cwd + "/" + request.path);
 			const stat = await shell.fs.stat(path);
 			if (!stat || stat.kind !== "file") throw new Error(request.path + ": No such file");
 			return {
 				bytes: await shell.fs.read(path),
 				path
 			};
+		};
+		const assembled = (found) => {
+			const bytes = moduleBytes(found.bytes);
+			if (!bytes) throw new Error(notModule(found.bytes));
+			return bytes;
 		};
 		const checker = (signal) => {
 			const deadline = Date.now() + shell.limits.timeoutMs;
@@ -36550,9 +37448,9 @@ async def run(request):
 		};
 		const loaded = async (request) => {
 			const found = await source(request);
-			if (!isWasm(found.bytes)) throw new Error("not a WebAssembly module (no \\0asm header)");
-			return compile(found.bytes, budgeted$1(options, shell.limits)).catch((error) => {
-				throw new Error(error instanceof Error ? error.message : String(error));
+			return compile(assembled(found), budgeted$1(options, shell.limits)).catch((error) => {
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(isWasm(found.bytes) ? message + WAT_HINT : message);
 			});
 		};
 		const instance = (request) => {
@@ -36590,6 +37488,7 @@ async def run(request):
 							exit_code: result.exitCode
 						};
 					}
+					case "assemble": return { module: toBase64(assembled(await source(request))) };
 					case "instantiate": {
 						const module = await loaded(request);
 						let live;
@@ -36656,7 +37555,7 @@ async def run(request):
 						instances.get(Number(request.id))?.dispose();
 						instances.delete(Number(request.id));
 						return {};
-					default: throw new Error("wasm op must be run, invoke, instantiate, call, read, write, grow or drop");
+					default: throw new Error("wasm op must be run, invoke, assemble, instantiate, call, read, write, grow or drop");
 				}
 			} catch (error) {
 				if (error instanceof Exit) throw new Error("the module exited with code " + error.code);
@@ -36664,1288 +37563,6 @@ async def run(request):
 			}
 		};
 	}
-	// src/bash/internal/commands/zip.ts
-	init_Shell();
-	init_FileSystem();
-	init_Fs();
-	init_Text();
-	const CRC_TABLE = (() => {
-		const table = /* @__PURE__ */ new Uint32Array(256);
-		for (let n = 0; n < 256; n++) {
-			let c = n;
-			for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-			table[n] = c >>> 0;
-		}
-		return table;
-	})();
-	function crc32(data) {
-		let crc = 4294967295;
-		for (let i = 0; i < data.length; i++) crc = CRC_TABLE[(crc ^ data[i]) & 255] ^ crc >>> 8;
-		return (crc ^ 4294967295) >>> 0;
-	}
-	const inflate = (data) => transform(data, new DecompressionStream("deflate-raw"));
-	const deflate = (data) => transform(data, new CompressionStream("deflate-raw"));
-	function dosTime(ms) {
-		const date = new Date(ms);
-		const year = Math.max(1980, date.getFullYear());
-		return [date.getHours() << 11 | date.getMinutes() << 5 | date.getSeconds() >> 1, year - 1980 << 9 | date.getMonth() + 1 << 5 | date.getDate()];
-	}
-	function fromDos(time, date) {
-		return new Date((date >> 9 & 127) + 1980, (date >> 5 & 15) - 1, date & 31, time >> 11 & 31, time >> 5 & 63, (time & 31) * 2).getTime();
-	}
-	function readEntries(data) {
-		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-		let end = -1;
-		for (let i = data.length - 22; i >= Math.max(0, data.length - 22 - 65535); i--) if (view.getUint32(i, true) === 101010256) {
-			end = i;
-			break;
-		}
-		if (end < 0) throw new CommandError("End-of-central-directory signature not found. Either this file is not a zipfile, or it constitutes one disk of a multi-part archive.", 9);
-		let count = view.getUint16(end + 10, true);
-		let offset = view.getUint32(end + 16, true);
-		const comment = decode(data.subarray(end + 22, end + 22 + view.getUint16(end + 20, true)));
-		if ((count === 65535 || offset === 4294967295) && end >= 20 && view.getUint32(end - 20, true) === 117853008) {
-			const record = Number(view.getBigUint64(end - 12, true));
-			if (view.getUint32(record, true) === 101075792) {
-				count = Number(view.getBigUint64(record + 32, true));
-				offset = Number(view.getBigUint64(record + 48, true));
-			}
-		}
-		const entries = [];
-		for (let i = 0; i < count; i++) {
-			if (offset + 46 > data.length || view.getUint32(offset, true) !== 33639248) throw new CommandError("bad zipfile offset (central directory)", 3);
-			const flags = view.getUint16(offset + 8, true);
-			const nameLength = view.getUint16(offset + 28, true);
-			const extraLength = view.getUint16(offset + 30, true);
-			const commentLength = view.getUint16(offset + 32, true);
-			const nameBytes = data.subarray(offset + 46, offset + 46 + nameLength);
-			const name = flags & 2048 ? decode(nameBytes) : decode(nameBytes);
-			let compressed = view.getUint32(offset + 20, true);
-			let size = view.getUint32(offset + 24, true);
-			let local = view.getUint32(offset + 42, true);
-			let extra = offset + 46 + nameLength;
-			const extraEnd = extra + extraLength;
-			while (extra + 4 <= extraEnd) {
-				const id = view.getUint16(extra, true);
-				const length = view.getUint16(extra + 2, true);
-				if (id === 1) {
-					let at = extra + 4;
-					if (size === 4294967295) {
-						size = Number(view.getBigUint64(at, true));
-						at += 8;
-					}
-					if (compressed === 4294967295) {
-						compressed = Number(view.getBigUint64(at, true));
-						at += 8;
-					}
-					if (local === 4294967295) local = Number(view.getBigUint64(at, true));
-				}
-				extra += 4 + length;
-			}
-			const external = view.getUint32(offset + 38, true);
-			const unixMode = view.getUint8(offset + 5) === 3 ? external >>> 16 : 0;
-			entries.push({
-				name,
-				method: view.getUint16(offset + 10, true),
-				crc: view.getUint32(offset + 16, true),
-				compressed,
-				size,
-				offset: local,
-				mtime: fromDos(view.getUint16(offset + 12, true), view.getUint16(offset + 14, true)),
-				mode: unixMode & 4095,
-				directory: name.endsWith("/") || (unixMode & 61440) === 16384 || (external & 16) !== 0,
-				comment: decode(data.subarray(extraEnd, extraEnd + commentLength))
-			});
-			if (flags & 1) entries[entries.length - 1].method = -1;
-			offset = extraEnd + commentLength;
-		}
-		return {
-			entries,
-			comment
-		};
-	}
-	async function contents(data, entry) {
-		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-		if (view.getUint32(entry.offset, true) !== 67324752) throw new CommandError("bad zipfile offset (local header sig): " + entry.name, 3);
-		const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true);
-		const raw = data.subarray(start, start + entry.compressed);
-		if (entry.method === 0) return raw;
-		if (entry.method === 8) return inflate(raw);
-		if (entry.method === -1) throw new CommandError("skipping: " + entry.name + " (encrypted entries are not supported)", 81);
-		throw new CommandError("skipping: " + entry.name + " (unsupported compression method " + entry.method + ")", 81);
-	}
-	function date(ms) {
-		const d = new Date(ms);
-		const pad = (n) => String(n).padStart(2, "0");
-		return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
-	}
-	function unsafe(name) {
-		return name.startsWith("/") || name.split("/").includes("..");
-	}
-	const unzip = async (ctx) => {
-		const flags = /* @__PURE__ */ new Set();
-		let dest;
-		let password = false;
-		const operands = [];
-		const excludes = [];
-		let excluding = false;
-		for (let i = 0; i < ctx.args.length; i++) {
-			const arg = ctx.args[i];
-			if (arg === "-d") {
-				dest = ctx.args[++i];
-				if (dest === void 0) throw new CommandError("error:  must specify directory to which to extract with -d option", 10);
-				continue;
-			}
-			if (arg === "-x") {
-				excluding = true;
-				continue;
-			}
-			if (arg === "-P") {
-				i++;
-				password = true;
-				continue;
-			}
-			if (arg.startsWith("-") && arg.length > 1 && !excluding) {
-				for (const c of arg.slice(1)) {
-					if (!"lvtopnqjfuCLaXKDZ".includes(c)) throw new CommandError("error: unrecognized option -" + c, 10);
-					flags.add(c);
-				}
-				continue;
-			}
-			if (arg.startsWith("-d") && arg.length > 2) {
-				dest = arg.slice(2);
-				continue;
-			}
-			(excluding ? excludes : operands).push(arg);
-		}
-		if (password) throw new CommandError("encrypted archives are not supported", 81);
-		const archive = operands.shift();
-		if (archive === void 0) {
-			ctx.stdout.write("UnZip 6.00 (nanocode-ts)\nUsage: unzip [-Z] [-opts[modifiers]] file[.zip] [list] [-x xlist] [-d exdir]\n  -p  extract files to pipe, no messages     -l  list files (short format)\n  -t  test compressed archive data           -o  overwrite files WITHOUT prompting\n  -n  never overwrite existing files         -j  junk paths (do not make directories)\n  -q  quiet mode                             -d  extract files into exdir\n");
-			return 0;
-		}
-		let path = ctx.resolve(archive);
-		let data;
-		try {
-			data = archive === "-" ? encode(ctx.stdin.read()) : await ctx.fs.read(path);
-		} catch (error) {
-			if (!(error instanceof FsError)) throw error;
-			try {
-				path = ctx.resolve(archive + ".zip");
-				data = await ctx.fs.read(path);
-			} catch {
-				ctx.stderr.write("unzip:  cannot find or open " + archive + ", " + archive + ".zip or " + archive + ".ZIP.\n");
-				return 9;
-			}
-		}
-		const { entries, comment } = readEntries(data);
-		const caseless = flags.has("C");
-		const matches = (patterns, name) => patterns.some((pattern) => globRegExp(pattern, caseless ? "i" : "").test(name));
-		const selected = entries.filter((entry) => (!operands.length || matches(operands, entry.name)) && !matches(excludes, entry.name));
-		for (const pattern of operands) if (!entries.some((entry) => matches([pattern], entry.name))) ctx.stderr.write("caution: filename not matched:  " + pattern + "\n");
-		const quiet = flags.has("q");
-		if (flags.has("Z") || flags.has("l") || flags.has("v")) {
-			if (flags.has("Z")) {
-				for (const entry of selected) ctx.stdout.write(entry.name + "\n");
-				return 0;
-			}
-			ctx.stdout.write("Archive:  " + archive + "\n");
-			if (flags.has("v")) {
-				ctx.stdout.write(" Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n--------  ------  ------- ---- ---------- ----- --------  ----\n");
-				let total = 0;
-				let packed = 0;
-				for (const entry of selected) {
-					total += entry.size;
-					packed += entry.compressed;
-					const ratio = entry.size ? Math.round((1 - entry.compressed / entry.size) * 100) : 0;
-					ctx.stdout.write(String(entry.size).padStart(8) + "  " + (entry.method === 8 ? "Defl:N" : "Stored").padEnd(6) + " " + String(entry.compressed).padStart(7) + " " + (ratio + "%").padStart(4) + " " + date(entry.mtime) + " " + entry.crc.toString(16).padStart(8, "0") + "  " + entry.name + "\n");
-				}
-				ctx.stdout.write("--------          -------  ---                            -------\n" + String(total).padStart(8) + "         " + String(packed).padStart(7) + " " + ((total ? Math.round((1 - packed / total) * 100) : 0) + "%").padStart(4) + "                            " + selected.length + " file" + (selected.length === 1 ? "" : "s") + "\n");
-				return 0;
-			}
-			ctx.stdout.write("  Length      Date    Time    Name\n---------  ---------- -----   ----\n");
-			let total = 0;
-			for (const entry of selected) {
-				total += entry.size;
-				ctx.stdout.write(String(entry.size).padStart(9) + "  " + date(entry.mtime) + "   " + entry.name + "\n");
-				await pause(ctx);
-			}
-			ctx.stdout.write("---------                     -------\n" + String(total).padStart(9) + "                     " + selected.length + " file" + (selected.length === 1 ? "" : "s") + "\n");
-			return 0;
-		}
-		if (!quiet && !flags.has("p")) ctx.stdout.write("Archive:  " + archive + "\n" + (comment ? comment + "\n" : ""));
-		let status = operands.length && !selected.length ? 11 : 0;
-		let errors = 0;
-		for (const entry of selected) {
-			if (flags.has("t")) {
-				if (entry.directory) continue;
-				const bytes = await contents(data, entry).catch(() => void 0);
-				const ok = bytes !== void 0 && crc32(bytes) === entry.crc;
-				if (!ok) errors++;
-				if (!quiet) ctx.stdout.write("    testing: " + entry.name.padEnd(23) + (ok ? "  OK" : "  bad CRC") + "\n");
-				continue;
-			}
-			if (flags.has("p")) {
-				if (entry.directory) continue;
-				ctx.stdout.write(decode(await contents(data, entry)));
-				continue;
-			}
-			if (unsafe(entry.name)) {
-				ctx.stderr.write("warning:  skipped \"../\" path component(s) in " + entry.name + "\n");
-				status = Math.max(status, 1);
-				continue;
-			}
-			const relative = flags.has("j") ? entry.name.split("/").filter(Boolean).pop() ?? "" : entry.name.replace(/\/+$/, "");
-			if (!relative || flags.has("j") && entry.directory) continue;
-			const target = ctx.resolve((dest !== void 0 ? dest.replace(/\/+$/, "") + "/" : "") + relative);
-			if (entry.directory) {
-				await mkdirs(ctx.fs, target);
-				if (!quiet) ctx.stdout.write("   creating: " + (dest !== void 0 ? dest.replace(/\/+$/, "") + "/" : "") + entry.name + "\n");
-				continue;
-			}
-			const existing = await lstatOf(ctx, target);
-			if (existing) {
-				if (flags.has("n")) continue;
-				if (flags.has("u") && existing.mtime >= entry.mtime) continue;
-				if (!flags.has("o") && !flags.has("f") && !flags.has("u")) {
-					ctx.stderr.write("replace " + relative + "? [y]es, [n]o, [A]ll, [N]one, [r]ename: NULL\n(EOF or read error, treating as \"[N]one\" ...)\n");
-					status = Math.max(status, 1);
-					break;
-				}
-			}
-			let bytes;
-			try {
-				bytes = await contents(data, entry);
-			} catch (error) {
-				if (!(error instanceof CommandError)) throw error;
-				ctx.stderr.write(error.message + "\n");
-				status = Math.max(status, 1);
-				continue;
-			}
-			if (crc32(bytes) !== entry.crc) {
-				ctx.stderr.write(relative + "  bad CRC " + crc32(bytes).toString(16).padStart(8, "0") + "  (should be " + entry.crc.toString(16).padStart(8, "0") + ")\n");
-				status = Math.max(status, 2);
-			}
-			await mkdirs(ctx.fs, parentOf(target));
-			await ctx.fs.write(target, bytes);
-			if (entry.mode && ctx.fs.chmod) await ctx.fs.chmod(target, entry.mode & 511);
-			if (!quiet) ctx.stdout.write("  inflating: " + (dest !== void 0 ? dest.replace(/\/+$/, "") + "/" : "") + relative + "\n");
-			await pause(ctx);
-		}
-		if (flags.has("t")) {
-			if (errors) {
-				ctx.stdout.write("At least one error was detected in " + archive + ".\n");
-				return 2;
-			}
-			if (!quiet) ctx.stdout.write("No errors detected in compressed data of " + archive + ".\n");
-			else ctx.stdout.write("No errors detected in compressed data of " + archive + ".\n");
-		}
-		return status;
-	};
-	async function gather(ctx, operand, recurse, junk, out, excluded) {
-		const path = ctx.resolve(operand);
-		const stat = await ctx.fs.stat(path);
-		if (!stat) return false;
-		const name = (junk ? operand.split("/").filter(Boolean).pop() ?? operand : operand.replace(/^(\.\/)+/, "").replace(/^\/+/, "")).replace(/\/+$/, "");
-		if (stat.kind === "file") {
-			if (!excluded(name)) out.push({
-				name,
-				data: await ctx.fs.read(path),
-				mtime: stat.mtime,
-				mode: stat.mode
-			});
-			return true;
-		}
-		if (!junk && name && name !== "." && !excluded(name + "/")) out.push({
-			name: name + "/",
-			data: void 0,
-			mtime: stat.mtime,
-			mode: stat.mode
-		});
-		if (!recurse) return true;
-		for (const child of await ctx.fs.list(path)) await gather(ctx, (operand.replace(/\/+$/, "") || "/") + "/" + child, recurse, junk, out, excluded);
-		return true;
-	}
-	const zip = async (ctx) => {
-		const flags = /* @__PURE__ */ new Set();
-		const excludes = [];
-		const operands = [];
-		let level = 6;
-		let mode;
-		for (let i = 0; i < ctx.args.length; i++) {
-			const arg = ctx.args[i];
-			if (arg === "-x" || arg === "--exclude") {
-				mode = "x";
-				continue;
-			}
-			if (arg === "-r" || arg === "--recurse-paths") {
-				flags.add("r");
-				continue;
-			}
-			if (arg.startsWith("--")) {
-				if (arg === "--quiet") flags.add("q");
-				else if (arg === "--junk-paths") flags.add("j");
-				else if (arg === "--delete") flags.add("d");
-				continue;
-			}
-			if (arg.startsWith("-") && arg.length > 1 && mode !== "x") {
-				for (const c of arg.slice(1)) if (/[0-9]/.test(c)) level = Number(c);
-				else if ("rqjdmuvXyDTlAoFS@".includes(c)) flags.add(c);
-				else throw new CommandError("zip error: Invalid command arguments (short option '" + c + "' not supported)", 16);
-				continue;
-			}
-			if (mode === "x") excludes.push(arg);
-			else operands.push(arg);
-		}
-		let archive = operands.shift();
-		if (archive === void 0) {
-			ctx.stdout.write("Zip 3.0 (nanocode-ts)\nUsage: zip [-options] [-b path] [-t mmddyyyy] [-n suffixes] [zipfile list] [-xi list]\n  -r   recurse into directories   -j   junk (don't record) directory names\n  -0   store only                 -9   compress better\n  -q   quiet operation            -d   delete entries in zipfile\n  -x   exclude the following names\n");
-			return 0;
-		}
-		if (archive !== "-" && !/\.[^/]*$/.test(archive.split("/").pop() ?? "")) archive += ".zip";
-		const path = ctx.resolve(archive);
-		const quiet = flags.has("q");
-		const excluded = (name) => excludes.some((pattern) => globRegExp(pattern).test(name) || globRegExp(pattern).test(name.replace(/\/$/, "")));
-		const existing = /* @__PURE__ */ new Map();
-		if (archive !== "-") {
-			const old = await ctx.fs.read(path).catch(() => void 0);
-			if (old?.length) {
-				const { entries } = readEntries(old);
-				for (const entry of entries) {
-					const view = new DataView(old.buffer, old.byteOffset, old.byteLength);
-					const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true);
-					existing.set(entry.name, {
-						name: entry.name,
-						data: void 0,
-						mtime: entry.mtime,
-						mode: entry.mode,
-						raw: old.slice(start, start + entry.compressed),
-						method: entry.method,
-						crc: entry.crc,
-						size: entry.size
-					});
-				}
-			}
-		}
-		if (flags.has("d")) {
-			let deleted = 0;
-			for (const name of [...existing.keys()]) if (operands.some((pattern) => globRegExp(pattern).test(name))) {
-				existing.delete(name);
-				deleted++;
-				if (!quiet) ctx.stdout.write("deleting: " + name + "\n");
-			}
-			if (!deleted) {
-				ctx.stderr.write("zip warning: name not matched: " + operands.join(" ") + "\n");
-				return 12;
-			}
-		} else {
-			const added = [];
-			let missing = 0;
-			for (const operand of operands) {
-				if (operand === "-@") continue;
-				if (!await gather(ctx, operand, flags.has("r"), flags.has("j"), added, excluded)) {
-					ctx.stderr.write("	zip warning: name not matched: " + operand + "\n");
-					missing++;
-				}
-			}
-			if (!added.length && !existing.size) {
-				ctx.stderr.write("\nzip error: Nothing to do! (" + archive + ")\n");
-				return 12;
-			}
-			for (const entry of added) {
-				const replaced = existing.has(entry.name);
-				existing.set(entry.name, entry);
-				if (!quiet) ctx.stdout.write((replaced ? "updating: " : "  adding: ") + entry.name + (entry.data === void 0 ? " (stored 0%)" : "") + "\n");
-			}
-			if (missing && !added.length) return 12;
-		}
-		const chunks = [];
-		const central = [];
-		let offset = 0;
-		for (const entry of existing.values()) {
-			const name = encode(entry.name);
-			let method;
-			let crc;
-			let size;
-			let body;
-			if ("raw" in entry && entry.raw !== void 0 && entry.data === void 0) {
-				method = entry.method ?? 0;
-				crc = entry.crc ?? 0;
-				size = entry.size ?? 0;
-				body = entry.raw;
-			} else {
-				const data = entry.data ?? /* @__PURE__ */ new Uint8Array();
-				crc = crc32(data);
-				size = data.length;
-				const packed = level > 0 && data.length ? await deflate(data) : data;
-				method = packed.length < data.length ? 8 : 0;
-				body = method === 8 ? packed : data;
-			}
-			if (offset > 4294967295 || body.length > 4294967295) throw new CommandError("zip error: archives larger than 4 GiB are not supported", 16);
-			const [time, day] = dosTime(entry.mtime);
-			const local = new Uint8Array(30 + name.length);
-			const lv = new DataView(local.buffer);
-			lv.setUint32(0, 67324752, true);
-			lv.setUint16(4, 20, true);
-			lv.setUint16(6, 2048, true);
-			lv.setUint16(8, method, true);
-			lv.setUint16(10, time, true);
-			lv.setUint16(12, day, true);
-			lv.setUint32(14, crc, true);
-			lv.setUint32(18, body.length, true);
-			lv.setUint32(22, size, true);
-			lv.setUint16(26, name.length, true);
-			local.set(name, 30);
-			const record = new Uint8Array(46 + name.length);
-			const cv = new DataView(record.buffer);
-			const directory = entry.name.endsWith("/");
-			cv.setUint32(0, 33639248, true);
-			cv.setUint16(4, 798, true);
-			cv.setUint16(6, 20, true);
-			cv.setUint16(8, 2048, true);
-			cv.setUint16(10, method, true);
-			cv.setUint16(12, time, true);
-			cv.setUint16(14, day, true);
-			cv.setUint32(16, crc, true);
-			cv.setUint32(20, body.length, true);
-			cv.setUint32(24, size, true);
-			cv.setUint16(28, name.length, true);
-			cv.setUint32(38, (((directory ? 16384 : 32768) | (entry.mode || (directory ? 493 : 420))) << 16 | (directory ? 16 : 0)) >>> 0, true);
-			cv.setUint32(42, offset, true);
-			record.set(name, 46);
-			chunks.push(local, body);
-			central.push(record);
-			offset += local.length + body.length;
-		}
-		const centralSize = central.reduce((total, part) => total + part.length, 0);
-		const end = /* @__PURE__ */ new Uint8Array(22);
-		const ev = new DataView(end.buffer);
-		ev.setUint32(0, 101010256, true);
-		ev.setUint16(8, central.length, true);
-		ev.setUint16(10, central.length, true);
-		ev.setUint32(12, centralSize, true);
-		ev.setUint32(16, offset, true);
-		const total = new Uint8Array(offset + centralSize + 22);
-		let at = 0;
-		for (const part of [
-			...chunks,
-			...central,
-			end
-		]) {
-			total.set(part, at);
-			at += part.length;
-		}
-		if (archive === "-") ctx.stdout.write(decode(total));
-		else await ctx.fs.write(path, total);
-		return 0;
-	};
-	// src/bash/internal/commands/wat.ts
-	var wat_exports = /* @__PURE__ */ __exportAll({
-		wat: () => wat,
-		wat2wasm: () => wat2wasm
-	});
-	function fail(message) {
-		throw new CommandError("wat2wasm: " + message, 1);
-	}
-	function tokenize(text) {
-		const encoder = new TextEncoder();
-		const stack = [[]];
-		let index = 0;
-		while (index < text.length) {
-			const char = text[index];
-			if (/\s/.test(char)) {
-				index++;
-				continue;
-			}
-			if (text.startsWith(";;", index)) {
-				const end = text.indexOf("\n", index);
-				index = end < 0 ? text.length : end + 1;
-				continue;
-			}
-			if (text.startsWith("(;", index)) {
-				const end = text.indexOf(";)", index + 2);
-				if (end < 0) fail("unterminated block comment");
-				index = end + 2;
-				continue;
-			}
-			if (char === "(") {
-				const list = [];
-				stack[stack.length - 1].push(list);
-				stack.push(list);
-				index++;
-				continue;
-			}
-			if (char === ")") {
-				if (stack.length < 2) fail("unexpected )");
-				stack.pop();
-				index++;
-				continue;
-			}
-			if (char === "\"") {
-				const bytes = [];
-				index++;
-				for (;;) {
-					if (index >= text.length) fail("unterminated string");
-					const next = text[index];
-					if (next === "\"") {
-						index++;
-						break;
-					}
-					if (next !== "\\") {
-						const end = text.slice(index).search(/["\\]/);
-						const chunk = end < 0 ? text.slice(index) : text.slice(index, index + end);
-						bytes.push(...encoder.encode(chunk));
-						index += chunk.length;
-						continue;
-					}
-					const escape = text[index + 1] ?? "";
-					if (escape in ESCAPES) {
-						bytes.push(ESCAPES[escape]);
-						index += 2;
-					} else if (escape === "u") {
-						const end = text.indexOf("}", index);
-						bytes.push(...encoder.encode(String.fromCodePoint(Number.parseInt(text.slice(index + 3, end), 16))));
-						index = end + 1;
-					} else if (/^[0-9a-fA-F]{2}$/.test(text.slice(index + 1, index + 3))) {
-						bytes.push(Number.parseInt(text.slice(index + 1, index + 3), 16));
-						index += 3;
-					} else fail("bad string escape \\" + escape);
-				}
-				stack[stack.length - 1].push({ bytes: new Uint8Array(bytes) });
-				continue;
-			}
-			const match = /^[^\s()";]+/.exec(text.slice(index));
-			if (!match) fail("unexpected " + JSON.stringify(char));
-			stack[stack.length - 1].push(match[0]);
-			index += match[0].length;
-		}
-		if (stack.length !== 1) fail("missing )");
-		return stack[0];
-	}
-	function unsigned(value) {
-		let rest = BigInt(value);
-		const out = [];
-		do {
-			let byte = Number(rest & 127n);
-			rest >>= 7n;
-			if (rest !== 0n) byte |= 128;
-			out.push(byte);
-		} while (rest !== 0n);
-		return out;
-	}
-	function signed(value) {
-		let rest = BigInt(value);
-		const out = [];
-		for (;;) {
-			const byte = Number(rest & 127n);
-			rest >>= 7n;
-			const done = rest === 0n && (byte & 64) === 0 || rest === -1n && (byte & 64) !== 0;
-			out.push(done ? byte : byte | 128);
-			if (done) return out;
-		}
-	}
-	function integer(atom, bits) {
-		if (typeof atom !== "string") fail("expected a number");
-		const clean = atom.replace(/_/g, "");
-		const negative = clean.startsWith("-");
-		const body = clean.replace(/^[+-]/, "");
-		if (!/^(0x[0-9a-fA-F]+|[0-9]+)$/.test(body)) fail("not an integer: " + atom);
-		let value = BigInt(body);
-		if (negative) value = -value;
-		const limit = 1n << BigInt(bits);
-		if (value >= limit || value < -(limit >> 1n)) fail("integer out of range: " + atom);
-		if (value >= limit >> 1n) value -= limit;
-		return value;
-	}
-	function float(atom, bits) {
-		if (typeof atom !== "string") fail("expected a float");
-		const clean = atom.replace(/_/g, "");
-		const negative = clean.startsWith("-");
-		const body = clean.replace(/^[+-]/, "");
-		const value = body === "inf" ? Infinity : body.startsWith("nan") ? NaN : /^0x/i.test(body) ? hexFloat(body) : Number(body);
-		if (Number.isNaN(value) && !body.startsWith("nan")) fail("not a float: " + atom);
-		const buffer = /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(bits / 8));
-		if (bits === 32) buffer.setFloat32(0, negative ? -value : value, true);
-		else buffer.setFloat64(0, negative ? -value : value, true);
-		return [...new Uint8Array(buffer.buffer)];
-	}
-	function hexFloat(body) {
-		const match = /^0x([0-9a-f]*)(?:\.([0-9a-f]*))?(?:p([+-]?\d+))?$/i.exec(body);
-		if (!match) return NaN;
-		return ((match[1] ? Number.parseInt(match[1], 16) : 0) + (match[2] ? Number.parseInt(match[2], 16) / 16 ** match[2].length : 0)) * 2 ** Number(match[3] ?? 0);
-	}
-	function vector(items) {
-		return [...unsigned(items.length), ...items.flat()];
-	}
-	function name(bytes) {
-		const encoded = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
-		return [...unsigned(encoded.length), ...encoded];
-	}
-	function head(node) {
-		return Array.isArray(node) && typeof node[0] === "string" ? node[0] : void 0;
-	}
-	function text(node) {
-		if (!node || typeof node === "string" || Array.isArray(node)) fail("expected a string");
-		return new TextDecoder().decode(node.bytes);
-	}
-	function valtype(atom) {
-		const value = typeof atom === "string" ? VALTYPES[atom] : void 0;
-		if (value === void 0) fail("unknown value type " + JSON.stringify(atom));
-		return value;
-	}
-	function wat2wasm(source) {
-		let fields = tokenize(source);
-		if (fields.length === 1 && head(fields[0]) === "module") fields = fields[0].slice(1).filter((field) => typeof field !== "string" || !field.startsWith("$"));
-		const types = [];
-		const typeNames = /* @__PURE__ */ new Map();
-		const funcNames = /* @__PURE__ */ new Map();
-		const globalNames = /* @__PURE__ */ new Map();
-		const memoryNames = /* @__PURE__ */ new Map();
-		const imports = [];
-		const funcs = [];
-		const globals = [];
-		const exports = [];
-		const datas = [];
-		const elems = [];
-		let tables = [];
-		let memories = [];
-		let start;
-		let importedFuncs = 0;
-		let importedGlobals = 0;
-		const signature = (params, results) => {
-			const key = params.join(",") + ":" + results.join(",");
-			const found = types.findIndex((type) => type.params.join(",") + ":" + type.results.join(",") === key);
-			if (found >= 0) return found;
-			types.push({
-				params,
-				results
-			});
-			return types.length - 1;
-		};
-		const typeUse = (items, names) => {
-			let explicit;
-			const params = [];
-			const results = [];
-			let rest = 0;
-			for (const item of items) {
-				const kind = head(item);
-				if (kind === "type") {
-					const ref = item[1];
-					explicit = typeof ref === "string" && ref.startsWith("$") ? typeNames.get(ref) ?? fail("unknown type " + ref) : Number(integer(ref ?? "", 32));
-				} else if (kind === "param") {
-					const parts = item.slice(1);
-					if (typeof parts[0] === "string" && parts[0].startsWith("$")) {
-						names?.set(parts[0], params.length);
-						params.push(valtype(parts[1]));
-					} else for (const part of parts) params.push(valtype(part));
-				} else if (kind === "result") for (const part of item.slice(1)) results.push(valtype(part));
-				else break;
-				rest++;
-			}
-			return {
-				type: explicit ?? signature(params, results),
-				rest,
-				params: explicit !== void 0 && !params.length ? types[explicit]?.params ?? [] : params
-			};
-		};
-		const exportsOf = (items) => {
-			const found = [];
-			let index = 0;
-			while (head(items[index] ?? "") === "export") found.push(text(items[index++][1]));
-			return {
-				found,
-				rest: index
-			};
-		};
-		const limits = (items) => {
-			const numbers = items.filter((item) => typeof item === "string" && /^[0-9]/.test(item)).map((item) => Number(integer(item, 64)));
-			if (!numbers.length) fail("limits need a minimum");
-			return numbers.length > 1 ? [
-				1,
-				...unsigned(numbers[0]),
-				...unsigned(numbers[1])
-			] : [0, ...unsigned(numbers[0])];
-		};
-		for (const field of fields) {
-			const kind = head(field);
-			const items = Array.isArray(field) ? field.slice(1) : [];
-			if (kind === "type") {
-				const label = typeof items[0] === "string" && items[0].startsWith("$") ? items.shift() : void 0;
-				const func = items[0];
-				if (head(func ?? "") !== "func") fail("type must be (func ...)");
-				const params = [];
-				const results = [];
-				for (const item of func.slice(1)) {
-					const parts = item.slice(1);
-					if (head(item) === "param") for (const part of parts) {
-						if (typeof part === "string" && part.startsWith("$")) continue;
-						params.push(valtype(part));
-					}
-					else if (head(item) === "result") for (const part of parts) results.push(valtype(part));
-				}
-				types.push({
-					params,
-					results
-				});
-				if (label) typeNames.set(label, types.length - 1);
-			}
-		}
-		for (const field of fields) {
-			const kind = head(field);
-			const items = Array.isArray(field) ? field.slice(1) : [];
-			if (kind === "import") {
-				const module = text(items[0]);
-				const field_ = text(items[1]);
-				const description = items[2];
-				const what = head(description);
-				const parts = description.slice(1);
-				const label = typeof parts[0] === "string" && parts[0].startsWith("$") ? parts.shift() : void 0;
-				if (what === "func") {
-					if (label) funcNames.set(label, importedFuncs);
-					importedFuncs++;
-					imports.push([
-						...name(module),
-						...name(field_),
-						0,
-						...unsigned(typeUse(parts).type)
-					]);
-				} else if (what === "memory") {
-					if (label) memoryNames.set(label, 0);
-					imports.push([
-						...name(module),
-						...name(field_),
-						2,
-						...limits(parts)
-					]);
-				} else if (what === "global") {
-					if (label) globalNames.set(label, importedGlobals);
-					importedGlobals++;
-					const type = parts[0];
-					imports.push([
-						...name(module),
-						...name(field_),
-						3,
-						...head(type) === "mut" ? [valtype(type[1]), 1] : [valtype(type), 0]
-					]);
-				} else fail("unsupported import kind " + what);
-			} else if (kind === "func") {
-				const label = typeof items[0] === "string" && items[0].startsWith("$") ? items.shift() : void 0;
-				const inline = head(items[0] ?? "") === "import" ? items.shift() : void 0;
-				const { found, rest } = exportsOf(items);
-				const afterExports = items.slice(rest);
-				const inlineImport = head(afterExports[0] ?? "") === "import" ? afterExports.shift() : inline;
-				if (inlineImport) {
-					if (label) funcNames.set(label, importedFuncs);
-					for (const exported of found) exports.push([
-						...name(exported),
-						0,
-						...unsigned(importedFuncs)
-					]);
-					importedFuncs++;
-					imports.push([
-						...name(text(inlineImport[1])),
-						...name(text(inlineImport[2])),
-						0,
-						...unsigned(typeUse(afterExports).type)
-					]);
-					continue;
-				}
-				const names = /* @__PURE__ */ new Map();
-				const use = typeUse(afterExports, names);
-				const body = afterExports.slice(use.rest);
-				const locals = [];
-				while (head(body[0] ?? "") === "local") {
-					const parts = body.shift().slice(1);
-					if (typeof parts[0] === "string" && parts[0].startsWith("$")) {
-						names.set(parts[0], use.params.length + locals.length);
-						locals.push(valtype(parts[1]));
-					} else for (const part of parts) locals.push(valtype(part));
-				}
-				funcs.push({
-					...label ? { name: label } : {},
-					type: use.type,
-					locals,
-					names,
-					body,
-					exports: found
-				});
-			}
-		}
-		for (const [index, func] of funcs.entries()) {
-			if (func.name) funcNames.set(func.name, importedFuncs + index);
-			for (const exported of func.exports) exports.push([
-				...name(exported),
-				0,
-				...unsigned(importedFuncs + index)
-			]);
-		}
-		const funcIndex = (ref) => typeof ref === "string" && ref.startsWith("$") ? funcNames.get(ref) ?? fail("unknown function " + ref) : Number(integer(ref ?? "", 32));
-		const globalIndex = (ref) => typeof ref === "string" && ref.startsWith("$") ? globalNames.get(ref) ?? fail("unknown global " + ref) : Number(integer(ref ?? "", 32));
-		const constant = (expr) => {
-			const parts = Array.isArray(expr) ? expr : [expr];
-			const op = parts[0];
-			if (op === "offset") return constant(parts[1]);
-			if (op === "i32.const") return [65, ...signed(integer(parts[1], 32))];
-			if (op === "i64.const") return [66, ...signed(integer(parts[1], 64))];
-			if (op === "f32.const") return [67, ...float(parts[1], 32)];
-			if (op === "f64.const") return [68, ...float(parts[1], 64)];
-			if (op === "global.get") return [35, ...unsigned(globalIndex(parts[1]))];
-			fail("unsupported constant expression " + JSON.stringify(op));
-		};
-		for (const field of fields) {
-			const kind = head(field);
-			const items = Array.isArray(field) ? field.slice(1) : [];
-			const label = typeof items[0] === "string" && items[0].startsWith("$") ? items.shift() : void 0;
-			if (kind === "memory") {
-				if (label) memoryNames.set(label, 0);
-				const { found, rest } = exportsOf(items);
-				for (const exported of found) exports.push([
-					...name(exported),
-					2,
-					0
-				]);
-				const parts = items.slice(rest);
-				const data = parts.find((part) => head(part) === "data");
-				if (data) {
-					const bytes = data.slice(1).flatMap((part) => typeof part === "object" && !Array.isArray(part) ? [...part.bytes] : []);
-					const pages = Math.max(1, Math.ceil(bytes.length / 65536));
-					memories = [[
-						1,
-						...unsigned(pages),
-						...unsigned(pages)
-					]];
-					datas.push([
-						0,
-						65,
-						0,
-						11,
-						...vector(bytes.map((byte) => [byte]))
-					]);
-				} else memories = [limits(parts)];
-			} else if (kind === "global") {
-				if (label) globalNames.set(label, importedGlobals + globals.length);
-				const { found, rest } = exportsOf(items);
-				for (const exported of found) exports.push([
-					...name(exported),
-					3,
-					...unsigned(importedGlobals + globals.length)
-				]);
-				const parts = items.slice(rest);
-				const type = parts[0];
-				globals.push([
-					...head(type) === "mut" ? [valtype(type[1]), 1] : [valtype(type), 0],
-					...constant(parts[1]),
-					11
-				]);
-			} else if (kind === "table") {
-				const { found, rest } = exportsOf(items);
-				for (const exported of found) exports.push([
-					...name(exported),
-					1,
-					0
-				]);
-				const parts = items.slice(rest);
-				const element = parts.find((part) => head(part) === "elem");
-				if (element) {
-					const refs = element.slice(1).map(funcIndex);
-					tables = [[
-						112,
-						1,
-						...unsigned(refs.length),
-						...unsigned(refs.length)
-					]];
-					elems.push([
-						0,
-						65,
-						0,
-						11,
-						...vector(refs.map((ref) => unsigned(ref)))
-					]);
-				} else tables = [[112, ...limits(parts.filter((part) => part !== "funcref" && part !== "anyfunc"))]];
-			} else if (kind === "elem") {
-				const offset = Array.isArray(items[0]) ? items.shift() : ["i32.const", "0"];
-				const refs = items.filter((item) => item !== "func").map(funcIndex);
-				elems.push([
-					0,
-					...constant(offset),
-					11,
-					...vector(refs.map((ref) => unsigned(ref)))
-				]);
-			} else if (kind === "data") {
-				if (head(items[0] ?? "") === "memory") items.shift();
-				const offset = Array.isArray(items[0]) ? items.shift() : ["i32.const", "0"];
-				const bytes = items.flatMap((part) => typeof part === "object" && !Array.isArray(part) ? [...part.bytes] : []);
-				datas.push([
-					0,
-					...constant(offset),
-					11,
-					...vector(bytes.map((byte) => [byte]))
-				]);
-			} else if (kind === "export") {
-				const exported = text(label === void 0 ? items[0] : items[0]);
-				const target = items[1];
-				const what = head(target);
-				const ref = target[1];
-				if (what === "func") exports.push([
-					...name(exported),
-					0,
-					...unsigned(funcIndex(ref))
-				]);
-				else if (what === "memory") exports.push([
-					...name(exported),
-					2,
-					0
-				]);
-				else if (what === "global") exports.push([
-					...name(exported),
-					3,
-					...unsigned(globalIndex(ref))
-				]);
-				else if (what === "table") exports.push([
-					...name(exported),
-					1,
-					0
-				]);
-				else fail("unsupported export kind " + what);
-			} else if (kind === "start") start = funcIndex(items[0] ?? label);
-			else if (kind !== "type" && kind !== "import" && kind !== "func") fail("unsupported module field " + JSON.stringify(kind ?? field));
-		}
-		const code = funcs.map((func) => {
-			const out = [];
-			const labels = [];
-			const local = (ref) => typeof ref === "string" && ref.startsWith("$") ? func.names.get(ref) ?? fail("unknown local " + ref) : Number(integer(ref ?? "", 32));
-			const depth = (ref) => {
-				if (typeof ref === "string" && ref.startsWith("$")) {
-					const found = labels.lastIndexOf(ref);
-					if (found < 0) fail("unknown label " + ref);
-					return labels.length - 1 - found;
-				}
-				return Number(integer(ref ?? "", 32));
-			};
-			const blockType = (items, at) => {
-				let index = at;
-				const label = typeof items[index] === "string" && items[index].startsWith("$") ? items[index++] : void 0;
-				const params = [];
-				const results = [];
-				let explicit;
-				while (Array.isArray(items[index]) && [
-					"result",
-					"param",
-					"type"
-				].includes(head(items[index]) ?? "")) {
-					const item = items[index++];
-					if (head(item) === "type") explicit = typeof item[1] === "string" && item[1].startsWith("$") ? typeNames.get(item[1]) ?? fail("unknown type " + item[1]) : Number(integer(item[1] ?? "", 32));
-					else for (const part of item.slice(1)) (head(item) === "result" ? results : params).push(valtype(part));
-				}
-				return {
-					label,
-					encoded: explicit !== void 0 ? signed(explicit) : !params.length && !results.length ? [64] : !params.length && results.length === 1 ? [results[0]] : signed(signature(params, results)),
-					next: index
-				};
-			};
-			const immediates = (op, items, at) => {
-				let index = at;
-				const take = () => items[index++];
-				if (op in SIMPLE) {
-					out.push(...SIMPLE[op]);
-					return index;
-				}
-				if (op in MEMORY) {
-					const [opcode, natural] = MEMORY[op];
-					let offset = 0;
-					let align = natural;
-					while (typeof items[index] === "string" && /^(offset|align)=/.test(items[index])) {
-						const [key, value] = take().split("=");
-						if (key === "offset") offset = Number(integer(value ?? "", 64));
-						else align = Math.log2(Number(value));
-					}
-					out.push(opcode, ...unsigned(align), ...unsigned(offset));
-					return index;
-				}
-				switch (op) {
-					case "i32.const":
-						out.push(65, ...signed(integer(take(), 32)));
-						return index;
-					case "i64.const":
-						out.push(66, ...signed(integer(take(), 64)));
-						return index;
-					case "f32.const":
-						out.push(67, ...float(take(), 32));
-						return index;
-					case "f64.const":
-						out.push(68, ...float(take(), 64));
-						return index;
-					case "local.get":
-						out.push(32, ...unsigned(local(take())));
-						return index;
-					case "local.set":
-						out.push(33, ...unsigned(local(take())));
-						return index;
-					case "local.tee":
-						out.push(34, ...unsigned(local(take())));
-						return index;
-					case "global.get":
-						out.push(35, ...unsigned(globalIndex(take())));
-						return index;
-					case "global.set":
-						out.push(36, ...unsigned(globalIndex(take())));
-						return index;
-					case "call":
-						out.push(16, ...unsigned(funcIndex(take())));
-						return index;
-					case "call_indirect": {
-						const use = [];
-						while (Array.isArray(items[index]) && [
-							"type",
-							"param",
-							"result"
-						].includes(head(items[index]) ?? "")) use.push(take());
-						out.push(17, ...unsigned(typeUse(use).type), 0);
-						return index;
-					}
-					case "br":
-						out.push(12, ...unsigned(depth(take())));
-						return index;
-					case "br_if":
-						out.push(13, ...unsigned(depth(take())));
-						return index;
-					case "br_table": {
-						const targets = [];
-						while (typeof items[index] === "string" && (/^\$/.test(items[index]) || /^[0-9]/.test(items[index]))) targets.push(depth(take()));
-						const fallback = targets.pop();
-						if (fallback === void 0) fail("br_table needs a default label");
-						out.push(14, ...vector(targets.map((target) => unsigned(target))), ...unsigned(fallback));
-						return index;
-					}
-					default: fail("unknown instruction " + op);
-				}
-			};
-			const flat = (items) => {
-				let index = 0;
-				while (index < items.length) {
-					const item = items[index];
-					if (Array.isArray(item)) {
-						folded(item);
-						index++;
-						continue;
-					}
-					if (typeof item !== "string") fail("unexpected string in function body");
-					const op = ALIASES[item] ?? item;
-					index++;
-					if (op === "block" || op === "loop" || op === "if") {
-						const type = blockType(items, index);
-						index = type.next;
-						labels.push(type.label);
-						out.push(op === "block" ? 2 : op === "loop" ? 3 : 4, ...type.encoded);
-					} else if (op === "else") {
-						out.push(5);
-						if (typeof items[index] === "string" && items[index].startsWith("$")) index++;
-					} else if (op === "end") {
-						labels.pop();
-						out.push(11);
-						if (typeof items[index] === "string" && items[index].startsWith("$")) index++;
-					} else index = immediates(op, items, index);
-				}
-			};
-			const folded = (node) => {
-				const op = ALIASES[head(node) ?? ""] ?? head(node);
-				if (!op) fail("expected an instruction");
-				if (op === "block" || op === "loop") {
-					const type = blockType(node, 1);
-					labels.push(type.label);
-					out.push(op === "block" ? 2 : 3, ...type.encoded);
-					flat(node.slice(type.next));
-					labels.pop();
-					out.push(11);
-					return;
-				}
-				if (op === "if") {
-					const type = blockType(node, 1);
-					let rest = node.slice(type.next);
-					const conditions = rest.filter((part) => head(part) !== "then" && head(part) !== "else");
-					for (const condition of conditions) folded(condition);
-					rest = rest.filter((part) => head(part) === "then" || head(part) === "else");
-					labels.push(type.label);
-					out.push(4, ...type.encoded);
-					for (const part of rest) {
-						if (head(part) === "else") out.push(5);
-						flat(part.slice(1));
-					}
-					labels.pop();
-					out.push(11);
-					return;
-				}
-				const atoms = [op];
-				let index = 1;
-				while (index < node.length && (!Array.isArray(node[index]) || [
-					"type",
-					"param",
-					"result"
-				].includes(head(node[index]) ?? ""))) atoms.push(node[index++]);
-				for (const child of node.slice(index)) folded(child);
-				immediates(op, atoms, 1);
-			};
-			flat(func.body);
-			const groups = [];
-			for (const type of func.locals) {
-				const last = groups[groups.length - 1];
-				if (last && last[1] === type) last[0]++;
-				else groups.push([1, type]);
-			}
-			const body = [
-				...vector(groups.map(([count, type]) => [...unsigned(count), type])),
-				...out,
-				11
-			];
-			return [...unsigned(body.length), ...body];
-		});
-		const section = (id, payload) => payload.length ? [
-			id,
-			...unsigned(payload.length),
-			...payload
-		] : [];
-		const bytes = [
-			0,
-			97,
-			115,
-			109,
-			1,
-			0,
-			0,
-			0,
-			...types.length ? section(1, vector(types.map((type) => [
-				96,
-				...vector(type.params.map((value) => [value])),
-				...vector(type.results.map((value) => [value]))
-			]))) : [],
-			...imports.length ? section(2, vector(imports)) : [],
-			...funcs.length ? section(3, vector(funcs.map((func) => unsigned(func.type)))) : [],
-			...tables.length ? section(4, vector(tables)) : [],
-			...memories.length ? section(5, vector(memories)) : [],
-			...globals.length ? section(6, vector(globals)) : [],
-			...exports.length ? section(7, vector(exports)) : [],
-			...start !== void 0 ? section(8, unsigned(start)) : [],
-			...elems.length ? section(9, vector(elems)) : [],
-			...funcs.length ? section(10, vector(code)) : [],
-			...datas.length ? section(11, vector(datas)) : []
-		];
-		return new Uint8Array(bytes);
-	}
-	var VALTYPES, SIMPLE, NUMERIC, MEMORY, ALIASES, ESCAPES, wat;
-	var init_wat = __esmMin(() => {
-		init_Shell();
-		VALTYPES = {
-			i32: 127,
-			i64: 126,
-			f32: 125,
-			f64: 124,
-			v128: 123,
-			funcref: 112,
-			externref: 111
-		};
-		SIMPLE = {
-			unreachable: [0],
-			nop: [1],
-			return: [15],
-			drop: [26],
-			select: [27],
-			"memory.size": [63, 0],
-			"memory.grow": [64, 0],
-			current_memory: [63, 0],
-			grow_memory: [64, 0],
-			"memory.copy": [
-				252,
-				10,
-				0,
-				0
-			],
-			"memory.fill": [
-				252,
-				11,
-				0
-			]
-		};
-		NUMERIC = [
-			"i32.eqz i32.eq i32.ne i32.lt_s i32.lt_u i32.gt_s i32.gt_u i32.le_s i32.le_u i32.ge_s i32.ge_u",
-			"i64.eqz i64.eq i64.ne i64.lt_s i64.lt_u i64.gt_s i64.gt_u i64.le_s i64.le_u i64.ge_s i64.ge_u",
-			"f32.eq f32.ne f32.lt f32.gt f32.le f32.ge f64.eq f64.ne f64.lt f64.gt f64.le f64.ge",
-			"i32.clz i32.ctz i32.popcnt i32.add i32.sub i32.mul i32.div_s i32.div_u i32.rem_s i32.rem_u i32.and i32.or i32.xor i32.shl i32.shr_s i32.shr_u i32.rotl i32.rotr",
-			"i64.clz i64.ctz i64.popcnt i64.add i64.sub i64.mul i64.div_s i64.div_u i64.rem_s i64.rem_u i64.and i64.or i64.xor i64.shl i64.shr_s i64.shr_u i64.rotl i64.rotr",
-			"f32.abs f32.neg f32.ceil f32.floor f32.trunc f32.nearest f32.sqrt f32.add f32.sub f32.mul f32.div f32.min f32.max f32.copysign",
-			"f64.abs f64.neg f64.ceil f64.floor f64.trunc f64.nearest f64.sqrt f64.add f64.sub f64.mul f64.div f64.min f64.max f64.copysign",
-			"i32.wrap_i64 i32.trunc_f32_s i32.trunc_f32_u i32.trunc_f64_s i32.trunc_f64_u i64.extend_i32_s i64.extend_i32_u i64.trunc_f32_s i64.trunc_f32_u i64.trunc_f64_s i64.trunc_f64_u",
-			"f32.convert_i32_s f32.convert_i32_u f32.convert_i64_s f32.convert_i64_u f32.demote_f64 f64.convert_i32_s f64.convert_i32_u f64.convert_i64_s f64.convert_i64_u f64.promote_f32",
-			"i32.reinterpret_f32 i64.reinterpret_f64 f32.reinterpret_i32 f64.reinterpret_i64 i32.extend8_s i32.extend16_s i64.extend8_s i64.extend16_s i64.extend32_s"
-		].join(" ").split(" ");
-		for (const [index, name] of NUMERIC.entries()) SIMPLE[name] = [69 + index];
-		MEMORY = {
-			"i32.load": [40, 2],
-			"i64.load": [41, 3],
-			"f32.load": [42, 2],
-			"f64.load": [43, 3],
-			"i32.load8_s": [44, 0],
-			"i32.load8_u": [45, 0],
-			"i32.load16_s": [46, 1],
-			"i32.load16_u": [47, 1],
-			"i64.load8_s": [48, 0],
-			"i64.load8_u": [49, 0],
-			"i64.load16_s": [50, 1],
-			"i64.load16_u": [51, 1],
-			"i64.load32_s": [52, 2],
-			"i64.load32_u": [53, 2],
-			"i32.store": [54, 2],
-			"i64.store": [55, 3],
-			"f32.store": [56, 2],
-			"f64.store": [57, 3],
-			"i32.store8": [58, 0],
-			"i32.store16": [59, 1],
-			"i64.store8": [60, 0],
-			"i64.store16": [61, 1],
-			"i64.store32": [62, 2]
-		};
-		ALIASES = {
-			get_local: "local.get",
-			set_local: "local.set",
-			tee_local: "local.tee",
-			get_global: "global.get",
-			set_global: "global.set",
-			"i32.wrap/i64": "i32.wrap_i64"
-		};
-		ESCAPES = {
-			n: 10,
-			t: 9,
-			r: 13,
-			"\"": 34,
-			"'": 39,
-			"\\": 92
-		};
-		wat = async (ctx) => {
-			let input;
-			let output;
-			for (let index = 0; index < ctx.args.length; index++) {
-				const arg = ctx.args[index];
-				if (arg === "-o" || arg === "--output") output = ctx.args[++index];
-				else if (arg.startsWith("--output=")) output = arg.slice(9);
-				else if (arg === "-h" || arg === "--help") {
-					ctx.stdout.write("usage: wat2wasm FILE.wat [-o FILE.wasm]\nAssembles WebAssembly text (flat or folded instructions, MVP opcodes, memory, data, globals, tables, imports such as WASI's) into a binary module.\n");
-					return 0;
-				} else if (arg.startsWith("-") && arg !== "-") continue;
-				else input = arg;
-			}
-			if (input === void 0) throw new CommandError("usage: wat2wasm FILE.wat [-o FILE.wasm]", 2);
-			const bytes = wat2wasm(input === "-" ? await ctx.stdin.text() : new TextDecoder().decode(await ctx.fs.read(ctx.resolve(input))));
-			const validate = globalThis.WebAssembly?.validate;
-			let valid = true;
-			try {
-				if (validate) valid = validate(bytes);
-			} catch {}
-			if (!valid) ctx.stderr.write("wat2wasm: warning: the assembled module does not validate; check operand types and stack balance\n");
-			const target = output ?? (input === "-" ? "out.wasm" : input.replace(/\.wat$/, "") + ".wasm");
-			if (target === "-") ctx.stdout.write(String.fromCharCode(...bytes));
-			else await ctx.fs.write(ctx.resolve(target), bytes);
-			return valid ? 0 : 1;
-		};
-	});
 	// src/bash/Bash.ts
 	init_FileSystem();
 	init_Fs();
@@ -37986,7 +37603,7 @@ async def run(request):
 	Object.keys(builtinCommands).sort();
 	async function create(options = {}) {
 		if (options.codec) useCodec(options.codec);
-		const fs = options.fs ?? create$1({ files: options.files });
+		const fs = options.fs ?? create$2({ files: options.files });
 		const cwd = resolvePath("/", options.cwd ?? "/home/user");
 		const machine = options.machine && new Set(options.machine.commands);
 		const env = machine ? { ...options.env } : {
@@ -38006,10 +37623,13 @@ async def run(request):
 			...builtinCommands,
 			...options.github ? gitCommands(options.github) : {},
 			...options.wasm ? wasmCommands(options.wasm) : {},
-			...options.python ? pythonCommands(options.python, options.psh) : {},
+			...options.python ? pythonCommands(options.python, options.psh, {
+				has: (name) => commands.has(name) || Object.hasOwn(BUILTINS$2, name),
+				run: (request) => spawned(request)
+			}) : {},
 			...options.commands
 		}));
-		if (!options.python?.remote && !options.python?.module && !(options.webassembly ?? compiles())) {
+		if (!options.python?.module && !(options.webassembly ?? compiles())) {
 			for (const name of [
 				"python",
 				"python3",
@@ -38018,6 +37638,108 @@ async def run(request):
 			]) if (!options.commands?.[name]) commands.delete(name);
 		}
 		let calls = 0;
+		const shellDefaults = Object.entries({
+			BASH: "/bin/bash",
+			BASH_VERSION: "5.2.21(1)-release",
+			BASH_EXECUTION_STRING: "",
+			OPTERR: "1",
+			PS4: "+ ",
+			IFS: " 	\n",
+			OPTIND: "1",
+			OSTYPE: "linux-gnu",
+			...machine ? {} : {
+				HOSTNAME: "localhost",
+				HOSTTYPE: "x86_64",
+				MACHTYPE: "x86_64-pc-linux-gnu",
+				BASH_LOADABLES_PATH: "/usr/local/lib/bash:/usr/lib/bash:/opt/local/lib/bash:/usr/pkg/lib/bash:/opt/pkg/lib/bash:.",
+				SHLVL: "1",
+				PPID: "1",
+				UID: "1000",
+				EUID: "1000"
+			}
+		}).map(([name, value]) => [name, [value]]);
+		if (!machine) shellDefaults.push(["BASH_VERSINFO", [
+			"5",
+			"2",
+			"21",
+			"1",
+			"release",
+			"x86_64-pc-linux-gnu"
+		]]);
+		const spawned = async (request) => {
+			const engine = await options.psh;
+			if (engine) {
+				const ran = await run$1(engine, {
+					commandFs: request.fs,
+					commands,
+					cwd: request.cwd,
+					env: request.env,
+					fetch: options.fetch,
+					fs: request.fs,
+					identity: identity(request.env),
+					kept: void 0,
+					limits: {
+						depth: limits.maxCallDepth,
+						file: limits.maxMemoryBytes,
+						fuel: limits.maxCommands,
+						memory: limits.maxMemoryBytes,
+						operations: limits.maxFileOperations,
+						output: limits.maxOutputLength
+					},
+					machine,
+					script: request.script,
+					shellLimits: limits,
+					signal: request.signal,
+					stdin: request.stdin,
+					strict: options.fallback === true || machine !== void 0,
+					without: [
+						"curl",
+						"wget",
+						...Object.keys(options.commands ?? {})
+					]
+				});
+				return {
+					status: ran.ended === "exited" ? ran.status : 126,
+					stderr: ran.stderr,
+					stdout: ran.stdout
+				};
+			}
+			const state = new State();
+			state.cwd = request.cwd;
+			for (const [name, value] of Object.entries({
+				...request.env,
+				PWD: request.cwd
+			})) {
+				state.vars.set(name, [value]);
+				state.exported.add(name);
+			}
+			const runner = new Runner({
+				fs: request.fs,
+				commands,
+				fetch: options.fetch,
+				fallback: options.fallback || machine !== void 0,
+				limits,
+				...machine ? { machine } : {}
+			}, state, request.signal);
+			const stdout = new Output(limits.maxOutputLength, false);
+			const stderr = new Output(limits.maxOutputLength, false);
+			let status;
+			try {
+				status = await run$2(runner, request.script, {
+					stdin: new Input(decode(request.stdin)),
+					stdout,
+					stderr
+				});
+			} catch (error) {
+				stderr.write("bash: " + (error instanceof Error ? error.message : String(error)) + "\n");
+				status = 1;
+			}
+			return {
+				status,
+				stderr: encode(stderr.text()),
+				stdout: encode(stdout.text())
+			};
+		};
 		const emit = (event) => {
 			if (!options.observe) return;
 			try {
@@ -38051,8 +37773,8 @@ async def run(request):
 				const onAbort = () => controller.abort("execution aborted");
 				if (execOptions.signal?.aborted) onAbort();
 				execOptions.signal?.addEventListener("abort", onAbort, { once: true });
-				const directory = resolvePath(cwd, execOptions.cwd ?? cwd);
-				const engine = await options.psh;
+				const directory = execOptions.cwd === void 0 ? cwd : resolvePath(cwd, execOptions.cwd);
+				const engine = options.psh === void 0 ? void 0 : await options.psh;
 				if (engine) {
 					const outcome = await engineRun(engine, {
 						controller,
@@ -38090,43 +37812,19 @@ async def run(request):
 				}
 				const state = new State();
 				state.cwd = directory;
-				for (const [name, value] of Object.entries({
-					...env,
-					...execOptions.env,
-					PWD: directory
-				})) {
-					state.vars.set(name, [value]);
+				const vars = state.vars;
+				for (const [name, value] of Object.entries(env)) {
+					vars.set(name, [value]);
 					state.exported.add(name);
 				}
-				for (const [name, value] of Object.entries({
-					BASH: "/bin/bash",
-					BASH_VERSION: "5.2.21(1)-release",
-					BASH_EXECUTION_STRING: script,
-					OPTERR: "1",
-					PS4: "+ ",
-					IFS: " 	\n",
-					OPTIND: "1",
-					OSTYPE: "linux-gnu",
-					...machine ? {} : {
-						HOSTNAME: "localhost",
-						HOSTTYPE: "x86_64",
-						MACHTYPE: "x86_64-pc-linux-gnu",
-						BASH_LOADABLES_PATH: "/usr/local/lib/bash:/usr/lib/bash:/opt/local/lib/bash:/usr/pkg/lib/bash:/opt/pkg/lib/bash:.",
-						SHLVL: "1",
-						PPID: "1",
-						UID: "1000",
-						EUID: "1000"
-					}
-				})) if (!state.vars.has(name)) state.vars.set(name, [value]);
-				if (!machine && !state.vars.has("BASH_VERSINFO")) state.vars.set("BASH_VERSINFO", [
-					"5",
-					"2",
-					"21",
-					"1",
-					"release",
-					"x86_64-pc-linux-gnu"
-				]);
-				if (machine) state.vars.known = new Set(state.vars.keys());
+				if (execOptions.env) for (const [name, value] of Object.entries(execOptions.env)) {
+					vars.set(name, [value]);
+					state.exported.add(name);
+				}
+				vars.set("PWD", [directory]);
+				state.exported.add("PWD");
+				for (const [name, value] of shellDefaults) if (!vars.has(name)) vars.set(name, name === "BASH_EXECUTION_STRING" ? [script] : value.slice());
+				if (machine) vars.known = new Set(vars.keys());
 				const budget = {
 					used: 0,
 					refused: false
@@ -38431,5 +38129,7 @@ async def run(request):
 	init_FileSystem();
 	exports.FsError = FsError;
 	exports.create = create;
+	exports.pip = pip;
+	exports.sitePackages = sitePackages;
 	return exports;
 })({});

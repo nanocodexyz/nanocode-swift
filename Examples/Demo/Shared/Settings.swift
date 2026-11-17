@@ -58,7 +58,6 @@ final class SettingsNode: Stack {
   let servers = Stack(.vertical, spacing: 0, align: .fill)
   let cloud = Stack(.vertical, spacing: 0, align: .fill)
   let folder = Stack(.vertical, spacing: 0, align: .fill)
-  let python = Stack(.vertical, spacing: 0, align: .fill)
   let computer = Stack(.vertical, spacing: 0, align: .fill)
   let hand = Stack(.vertical, spacing: 0, align: .fill)
   var paid: Node?
@@ -278,7 +277,6 @@ final class SettingsNode: Stack {
       section("Account", [access, style(wallet), style(plans), style(keys), paid]),
       section("Where the agent runs", [runner, style(servers), style(cloud)]),
       section("Appearance", [styles]),
-      section("Python", [style(python)], footer: "The shell's python, python3 and pip run Pyodide in a hidden web view on this device, with its files cached for use offline."),
       section("Workspace", [style(folder)], footer: "Sessions, the shell, device tools and this device's hand work on this folder's real files."),
       section("Computer", [style(computer)], footer: "Run the command on a computer, and the agent's commands and cells run there."),
       section("This device as a hand", [handFields, style(hand)], footer: "Paste the command a nanocode session shows to run its tools on this device."),
@@ -307,16 +305,6 @@ final class SettingsNode: Stack {
     }
     renderWallet()
     renderPlans()
-    let status: String = switch model.python.state {
-    case .idle: "Not started"
-    case .loading: "Loading Pyodide and its packages…"
-    case .ready(let version): "Python \(version) on Pyodide"
-    case .failed(let error): error
-    }
-    card(python, [
-      row("Status", trailing: [text(status, 15, .regular, skin.muted, lines: 1)]),
-      row("Preloaded", detail: model.python.packages.joined(separator: ", ")),
-    ])
     var folderRows: [Node] = [
       row(model.folder == nil ? "The app's folder" : model.folder?.lastPathComponent ?? "Folder", detail: model.folder == nil ? "Inside the app's data" : "Chosen by you"),
       block(mono(model.workspace.path, size: 12)),

@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        Arc, OnceLock, Weak,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
@@ -41,8 +41,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use tokio::sync::oneshot;
 
-use crate::{bridge::Host, files::local, session::text};
+use crate::{files::local, session::text};
 
+mod python;
 mod wasm;
 
 const LAZY: [&str; 4] = ["crypto", "extra", "intl", "web"];
@@ -80,7 +81,12 @@ enum Message {
     },
     Python {
         id: u64,
-        result: Result<String, String>,
+        result: Result<python::Ran, String>,
+    },
+    Spawn {
+        id: u64,
+        child: nanocode_python::Child,
+        reply: mpsc::Sender<std::io::Result<nanocode_python::Exited>>,
     },
     Stop,
 }
@@ -89,7 +95,6 @@ pub struct Shell {
     cwd: PathBuf,
     cache: PathBuf,
     sources: PathBuf,
-    host: Arc<OnceLock<Weak<Host>>>,
     worker: OnceLock<Worker>,
     next: AtomicU64,
 }
@@ -119,14 +124,9 @@ impl Shell {
             cwd,
             cache,
             sources,
-            host: Arc::new(OnceLock::new()),
             worker: OnceLock::new(),
             next: AtomicU64::new(1),
         }
-    }
-
-    pub fn attach(&self, host: Weak<Host>) {
-        let _ = self.host.set(host);
     }
 
     pub async fn run(
@@ -138,14 +138,7 @@ impl Shell {
     ) -> Result<Ran, String> {
         let worker = self
             .worker
-            .get_or_init(|| {
-                Worker::spawn(
-                    &self.cwd,
-                    self.cache.clone(),
-                    self.sources.clone(),
-                    Arc::clone(&self.host),
-                )
-            });
+            .get_or_init(|| Worker::spawn(&self.cwd, self.cache.clone(), self.sources.clone()));
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let request = json!({
             "script": script,
@@ -184,12 +177,7 @@ impl Drop for Shell {
 }
 
 impl Worker {
-    fn spawn(
-        cwd: &Path,
-        cache: PathBuf,
-        sources: PathBuf,
-        host: Arc<OnceLock<Weak<Host>>>,
-    ) -> Self {
+    fn spawn(cwd: &Path, cache: PathBuf, sources: PathBuf) -> Self {
         let (sender, receiver) = mpsc::channel();
         let stopped = Arc::new(AtomicBool::new(false));
         let container = std::env::temp_dir().parent().map(Path::to_path_buf);
@@ -203,10 +191,9 @@ impl Worker {
             "cwd": cwd.to_string_lossy(),
             "env": {"HOME": home.to_string_lossy()},
             "limits": {"maxMemoryBytes": COMMAND_MEMORY},
-            "tmp": local(Path::new("/tmp")).to_string_lossy().trim_end_matches('/'),
         })
         .to_string();
-        let network = Network::new(sender.clone(), host);
+        let network = Network::new(sender.clone(), cache.with_file_name("python"));
         let flag = Arc::clone(&stopped);
         let _ = std::thread::Builder::new()
             .name("nanocode-shell".to_owned())
@@ -233,14 +220,14 @@ struct Fetch {
 
 struct Network {
     sender: mpsc::Sender<Message>,
-    host: Arc<OnceLock<Weak<Host>>>,
+    pythons: python::Pythons,
     handle: Option<tokio::runtime::Handle>,
     follow: Result<reqwest::Client, String>,
     manual: Result<reqwest::Client, String>,
 }
 
 impl Network {
-    fn new(sender: mpsc::Sender<Message>, host: Arc<OnceLock<Weak<Host>>>) -> Self {
+    fn new(sender: mpsc::Sender<Message>, python: PathBuf) -> Self {
         let client = |policy| {
             reqwest::Client::builder()
                 .redirect(policy)
@@ -249,37 +236,12 @@ impl Network {
                 .map_err(text)
         };
         Self {
+            pythons: python::Pythons::new(python, sender.clone()),
             sender,
-            host,
             handle: tokio::runtime::Handle::try_current().ok(),
             follow: client(reqwest::redirect::Policy::limited(20)),
             manual: client(reqwest::redirect::Policy::none()),
         }
-    }
-
-    fn host(&self) -> Option<Arc<Host>> {
-        self.host.get().and_then(Weak::upgrade)
-    }
-
-    fn pyodide(&self, id: u64, request: String) {
-        let sender = self.sender.clone();
-        let (Some(handle), Some(host)) = (&self.handle, self.host()) else {
-            let _ = sender.send(Message::Python {
-                id,
-                result: Err("this app runs no Python".to_owned()),
-            });
-            return;
-        };
-        handle.spawn(async move {
-            let result = host
-                .call("python", json!({"request": request}))
-                .await
-                .and_then(|reply| match reply {
-                    Json::String(reply) => Ok(reply),
-                    other => Err(format!("Python answered {other}")),
-                });
-            let _ = sender.send(Message::Python { id, result });
-        });
     }
 
     fn start(&self, id: u64, request: Fetch, body: Option<Vec<u8>>) {
@@ -487,8 +449,20 @@ fn described<'js>(
     Ok(object.into_value())
 }
 
+thread_local! {
+    static PYTHON: RefCell<PathBuf> = RefCell::default();
+}
+
+fn real(path: &str) -> PathBuf {
+    PYTHON.with_borrow(|root| python::real(root, Path::new(path)))
+}
+
 fn stat<'js>(ctx: &Ctx<'js>, path: &str, follow: bool) -> rquickjs::Result<Value<'js>> {
-    let real = local(Path::new(path));
+    let real = if python::ROOT.starts_with(path) && python::ROOT[path.len()..].starts_with('/') {
+        PYTHON.with_borrow(|root| root.clone())
+    } else {
+        real(path)
+    };
     let metadata = if follow {
         std::fs::metadata(&real)
     } else {
@@ -668,7 +642,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
         "read",
         Func::from(
             |ctx: Ctx<'js>, path: String| -> rquickjs::Result<ArrayBuffer<'js>> {
-                let real = local(Path::new(&path));
+                let real = real(&path);
                 let special = std::fs::metadata(&real)
                     .is_ok_and(|metadata| !metadata.is_file() && !metadata.is_dir());
                 let bytes = if special {
@@ -697,7 +671,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
                     .write(true)
                     .append(append)
                     .truncate(!append)
-                    .open(local(Path::new(&path)))
+                    .open(real(&path))
                     .and_then(|mut file| file.write_all(data))
                     .map_err(|error| failure(&ctx, &error))
             },
@@ -707,7 +681,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
         "list",
         Func::from(
             |ctx: Ctx<'js>, path: String| -> rquickjs::Result<Vec<String>> {
-                let mut names = std::fs::read_dir(local(Path::new(&path)))
+                let mut names = std::fs::read_dir(real(&path))
                     .and_then(|entries| {
                         entries
                             .map(|entry| {
@@ -724,13 +698,13 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
     shell.set(
         "mkdir",
         Func::from(|ctx: Ctx<'js>, path: String| -> rquickjs::Result<()> {
-            std::fs::create_dir(local(Path::new(&path))).map_err(|error| failure(&ctx, &error))
+            std::fs::create_dir(real(&path)).map_err(|error| failure(&ctx, &error))
         }),
     )?;
     shell.set(
         "remove",
         Func::from(|ctx: Ctx<'js>, path: String| -> rquickjs::Result<()> {
-            let real = local(Path::new(&path));
+            let real = real(&path);
             std::fs::symlink_metadata(&real)
                 .and_then(|metadata| {
                     if metadata.is_dir() {
@@ -746,8 +720,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
         "rename",
         Func::from(
             |ctx: Ctx<'js>, from: String, to: String| -> rquickjs::Result<()> {
-                std::fs::rename(local(Path::new(&from)), local(Path::new(&to)))
-                    .map_err(|error| failure(&ctx, &error))
+                std::fs::rename(real(&from), real(&to)).map_err(|error| failure(&ctx, &error))
             },
         ),
     )?;
@@ -755,7 +728,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
         "chmod",
         Func::from(
             |ctx: Ctx<'js>, path: String, mode: u32| -> rquickjs::Result<()> {
-                std::fs::set_permissions(local(Path::new(&path)), Permissions::from_mode(mode))
+                std::fs::set_permissions(real(&path), Permissions::from_mode(mode))
                     .map_err(|error| failure(&ctx, &error))
             },
         ),
@@ -765,7 +738,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
         Func::from(
             |ctx: Ctx<'js>, path: String, mtime: f64| -> rquickjs::Result<()> {
                 let time = UNIX_EPOCH + Duration::from_millis(mtime.max(0.0) as u64);
-                File::open(local(Path::new(&path)))
+                File::open(real(&path))
                     .and_then(|file| file.set_modified(time))
                     .map_err(|error| failure(&ctx, &error))
             },
@@ -780,7 +753,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
                 } else {
                     PathBuf::from(target)
                 };
-                std::os::unix::fs::symlink(target, local(Path::new(&path)))
+                std::os::unix::fs::symlink(target, real(&path))
                     .map_err(|error| failure(&ctx, &error))
             },
         ),
@@ -789,7 +762,7 @@ fn install_files<'js>(shell: &Object<'js>) -> rquickjs::Result<()> {
         "readlink",
         Func::from(
             |ctx: Ctx<'js>, path: String| -> rquickjs::Result<Value<'js>> {
-                match std::fs::read_link(local(Path::new(&path))) {
+                match std::fs::read_link(real(&path)) {
                     Ok(target) => rquickjs::String::from_str(ctx, &target.to_string_lossy())
                         .map(rquickjs::String::into_value),
                     Err(error) if missing(&error) || error.kind() == ErrorKind::InvalidInput => {
@@ -963,8 +936,39 @@ fn install<'js>(
     wasm::install(ctx)?;
     let python = Rc::clone(network);
     shell.set(
-        "pyodide",
-        Func::from(move |id: f64, request: String| python.pyodide(id as u64, request)),
+        "python",
+        Func::from(
+            move |id: f64, request: String, stdin: rquickjs::String<'js>| -> rquickjs::Result<()> {
+                python.pythons.start(id as u64, &request, unescaped(stdin)?);
+                Ok(())
+            },
+        ),
+    )?;
+    let python = Rc::clone(network);
+    shell.set(
+        "stopPython",
+        Func::from(move |id: f64| python.pythons.stop(id as u64)),
+    )?;
+    let python = Rc::clone(network);
+    shell.set(
+        "spawned",
+        Func::from(
+            move |token: f64,
+                  status: i32,
+                  stdout: rquickjs::String<'js>,
+                  stderr: rquickjs::String<'js>|
+                  -> rquickjs::Result<()> {
+                python.pythons.exited(
+                    token as u64,
+                    Ok(nanocode_python::Exited {
+                        status,
+                        stdout: unescaped(stdout)?,
+                        stderr: unescaped(stderr)?,
+                    }),
+                );
+                Ok(())
+            },
+        ),
     )?;
     let timers = Rc::clone(state);
     ctx.globals().set(
@@ -1235,10 +1239,14 @@ fn open<'js>(
     let caught = |error: rquickjs::CaughtError<'_>| error.to_string();
     let sources = Sources::load(sources)?;
     install(ctx, state, network).catch(ctx).map_err(caught)?;
-    ctx.eval::<Value, _>(sources.host).catch(ctx).map_err(caught)?;
+    ctx.eval::<Value, _>(sources.host)
+        .catch(ctx)
+        .map_err(caught)?;
     let prelude: Function = ctx.eval(sources.prelude).catch(ctx).map_err(caught)?;
     call(ctx, "__install", (prelude,))?;
-    bundle(ctx, cache, &sources.bash).catch(ctx).map_err(caught)?;
+    bundle(ctx, cache, &sources.bash)
+        .catch(ctx)
+        .map_err(caught)?;
     call(ctx, "__open", (config.to_owned(),))
 }
 
@@ -1284,6 +1292,9 @@ fn work(
         Err(error) => return refuse(receiver, &format!("start QuickJS: {error}")),
     };
     let state = Rc::new(RefCell::new(State::default()));
+    let python = cache.with_file_name("python");
+    let _ = std::fs::create_dir_all(&python);
+    PYTHON.set(python);
     let network = Rc::new(network);
     let opened = context.with(|ctx| open(&ctx, &state, &network, config, cache, sources));
     while !stopped.load(Ordering::Relaxed) {
@@ -1342,14 +1353,51 @@ fn work(
                 });
             }
             Message::Python { id, result } => {
+                network.pythons.finished(id);
                 let _ = context.with(|ctx| match result {
-                    Ok(reply) => call(
-                        &ctx,
-                        "__python",
-                        (id as f64, Value::new_null(ctx.clone()), reply),
-                    ),
+                    Ok(ran) => {
+                        let stdout =
+                            escaped(&ctx, &ran.stdout).map_err(|error| error.to_string())?;
+                        let stderr =
+                            escaped(&ctx, &ran.stderr).map_err(|error| error.to_string())?;
+                        call(
+                            &ctx,
+                            "__python",
+                            (
+                                id as f64,
+                                Value::new_null(ctx.clone()),
+                                ran.status,
+                                stdout,
+                                stderr,
+                            ),
+                        )
+                    }
                     Err(error) => call(&ctx, "__python", (id as f64, error)),
                 });
+            }
+            Message::Spawn { id, child, reply } => {
+                let token = network.pythons.child(reply);
+                let request = json!({
+                    "python": id,
+                    "argv": child.argv.iter().map(|arg| String::from_utf8_lossy(arg)).collect::<Vec<_>>(),
+                    "env": child
+                        .env
+                        .iter()
+                        .map(|(name, value)| (String::from_utf8_lossy(name), String::from_utf8_lossy(value)))
+                        .collect::<BTreeMap<_, _>>(),
+                    "cwd": String::from_utf8_lossy(&child.cwd),
+                    "merged": child.merged,
+                })
+                .to_string();
+                let started = context.with(|ctx| {
+                    let stdin = escaped(&ctx, &child.stdin).map_err(|error| error.to_string())?;
+                    call(&ctx, "__spawn", (token as f64, request, stdin))
+                });
+                if let Err(error) = started {
+                    network
+                        .pythons
+                        .exited(token, Err(std::io::Error::other(error)));
+                }
             }
             Message::Stop => break,
         }

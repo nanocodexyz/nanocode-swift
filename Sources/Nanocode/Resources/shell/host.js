@@ -7,23 +7,44 @@
   delete globalThis.__wasm;
   const skipped = new Set(["WebAssembly", "bash", "process", "require", "wasm"]);
   const pythons = new Map();
-  const python = (home, tmp) => (request, signal) => {
-    const mounts = [[home, home], [tmp, "/tmp"]];
-    for (const root of request.roots) {
-      const directory = root === request.filename ? root.slice(0, Math.max(1, root.lastIndexOf("/"))) : root;
-      if (!mounts.some(([, point]) => inside(directory, point))) mounts.push([directory, directory]);
+  const spawning = new Set();
+  const programs = ["/usr/bin/", "/bin/"];
+  const program = (path) => {
+    const directory = programs.find((prefix) => path.startsWith(prefix));
+    const name = directory === undefined ? path : path.slice(directory.length);
+    return name.includes("/") ? path : name;
+  };
+  const quote = (word) => /^[\w@%+=:,./-]+$/.test(word) ? word : "'" + word.replaceAll("'", "'\\''") + "'";
+  const interpret = (ctx) => {
+    if (spawning.size) {
+      ctx.stderr.write(ctx.name + ": cannot start while another Python waits for its subprocess in this shell\n");
+      return Promise.resolve(126);
     }
     const id = next++;
+    const request = JSON.stringify({
+      argv: ctx.args,
+      cwd: ctx.cwd,
+      env: { ...ctx.env, PWD: ctx.cwd },
+      output: ctx.limits.maxOutputLength,
+      file: ctx.limits.maxMemoryBytes,
+    });
+    const stop = () => native.stopPython(id);
     return new Promise((resolve, reject) => {
-      pythons.set(id, { resolve, reject });
-      signal.addEventListener("abort", () => {
-        pythons.delete(id);
-        native.pyodide(next++, JSON.stringify({ cancel: id }));
-        reject(signal.reason);
-      }, { once: true });
-      native.pyodide(id, JSON.stringify({ ...request, id, home, mounts }));
+      pythons.set(id, { resolve, reject, signal: ctx.signal });
+      ctx.signal.addEventListener("abort", stop, { once: true });
+      native.python(id, request, ctx.stdin.read());
+    }).then(({ status, stdout, stderr }) => {
+      ctx.signal.removeEventListener("abort", stop);
+      ctx.stdout.write(stdout);
+      ctx.stderr.write(stderr);
+      return status;
     });
   };
+  const python = (ctx) =>
+    ctx.args[0] === "-m" && (ctx.args[1] === "pip" || ctx.args[1] === "pip3")
+      ? NanocodeBash.pip(ctx, ctx.args.slice(2))
+      : interpret(ctx);
+  const pip = (ctx) => NanocodeBash.pip(ctx, ctx.args);
   const fetches = new Map();
   const runs = new Map();
   let next = 1;
@@ -357,8 +378,6 @@
     delete globalThis.__install;
   };
 
-  const inside = (path, root) => path === root || path.startsWith(root === "/" ? "/" : root + "/");
-
   globalThis.__open = (config) => {
     const options = JSON.parse(config);
     ready = NanocodeBash.create({
@@ -374,7 +393,7 @@
       env: options.env,
       limits: options.limits,
       wasm: { rootDepth: -1 },
-      python: { remote: python(options.env.HOME, options.tmp), shared: true },
+      commands: { python, python3: python, pip, pip3: pip },
     });
     ready.catch(() => {});
     delete globalThis.__open;
@@ -403,12 +422,34 @@
 
   globalThis.__abort = (id) => runs.get(id)?.abort("execution aborted");
 
-  globalThis.__python = (id, failed, reply) => {
+  globalThis.__python = (id, failed, status, stdout, stderr) => {
     const pending = pythons.get(id);
     if (!pending) return;
     pythons.delete(id);
-    if (failed === null) pending.resolve(JSON.parse(reply));
+    if (failed === null) pending.resolve({ status, stdout, stderr });
     else pending.reject(new Error(failed));
+  };
+
+  globalThis.__spawn = (token, request, stdin) => {
+    const child = JSON.parse(request);
+    const argv = child.argv.map((word, index) => index === 0 ? program(word) : word);
+    const script = (argv[0] === "sh" || argv[0] === "bash") && argv[1] === "-c" && argv.length === 3
+      ? argv[2]
+      : argv.map(quote).join(" ");
+    const signal = pythons.get(child.python)?.signal;
+    spawning.add(token);
+    ready
+      .then((shell) => shell.exec(child.merged ? "{ " + script + "\n} 2>&1" : script, {
+        cwd: child.cwd,
+        env: child.env,
+        stdin,
+        ...(signal ? { signal } : {}),
+      }))
+      .then(
+        (result) => native.spawned(token, result.exitCode, result.stdout, result.stderr),
+        (error) => native.spawned(token, 126, "", (error instanceof Error ? error.message : String(error)) + "\n"),
+      )
+      .finally(() => spawning.delete(token));
   };
 
   globalThis.__fetched = (id, failed, head) => {

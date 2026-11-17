@@ -25,6 +25,7 @@ nanocode-tool-runtime = { path = "../nanocodex/crates/integrations/tool-runtime"
 nanocode-mcp = { path = "../nanocodex/crates/core/mcp" }
 nanocode-mcp-tools = { path = "../nanocodex/crates/integrations/mcp-tools" }
 nanocode-http = { path = "../nanocodex/crates/core/http" }
+nanocode-python = { path = "../nanocodex/crates/core/python" }
 mpp = { version = "0.17.1", default-features = false, features = ["client", "tempo", "sqlite", "reqwest-rustls-tls-no-provider"] }
 async-trait = "0.1.89"
 base64 = "0.22"
@@ -55,6 +56,30 @@ psh = { path = "../nanocodex/crates/patches/psh/crates/psh" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 rquickjs = { version = "0.14.0", features = ["bindgen"] }
+
+[patch.crates-io]
+pymath = { path = "../nanocodex/crates/patches/pymath" }
+rustpython-codegen = { path = "../nanocodex/crates/patches/rustpython-codegen" }
+rustpython-common = { path = "../nanocodex/crates/patches/rustpython-common" }
+rustpython-compiler = { path = "../nanocodex/crates/patches/rustpython-compiler" }
+rustpython-compiler-core = { path = "../nanocodex/crates/patches/rustpython-compiler-core" }
+rustpython-derive = { path = "../nanocodex/crates/patches/rustpython-derive" }
+rustpython-derive-impl = { path = "../nanocodex/crates/patches/rustpython-derive-impl" }
+rustpython-doc = { path = "../nanocodex/crates/patches/rustpython-doc" }
+rustpython-host_env = { path = "../nanocodex/crates/patches/rustpython-host_env" }
+rustpython-literal = { path = "../nanocodex/crates/patches/rustpython-literal" }
+rustpython-pylib = { path = "../nanocodex/crates/patches/rustpython-pylib" }
+rustpython-ruff_python_ast = { path = "../nanocodex/crates/patches/rustpython-ruff_python_ast" }
+rustpython-ruff_python_parser = { path = "../nanocodex/crates/patches/rustpython-ruff_python_parser" }
+rustpython-ruff_python_trivia = { path = "../nanocodex/crates/patches/rustpython-ruff_python_trivia" }
+rustpython-ruff_source_file = { path = "../nanocodex/crates/patches/rustpython-ruff_source_file" }
+rustpython-ruff_text_size = { path = "../nanocodex/crates/patches/rustpython-ruff_text_size" }
+rustpython-sre_engine = { path = "../nanocodex/crates/patches/rustpython-sre_engine" }
+rustpython-stdlib = { path = "../nanocodex/crates/patches/rustpython-stdlib" }
+rustpython-unicode = { path = "../nanocodex/crates/patches/rustpython-unicode" }
+rustpython-vm = { path = "../nanocodex/crates/patches/rustpython-vm" }
+rustpython-wtf8 = { path = "../nanocodex/crates/patches/rustpython-wtf8" }
+unicode-normalization = { path = "../nanocodex/crates/core/unicode-normalization" }
 
 [profile.dev]
 debug = false

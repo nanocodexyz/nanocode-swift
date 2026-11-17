@@ -9,8 +9,6 @@ let workspaceTools = ProcessInfo.processInfo.environment["NANOCODE_WORKSPACE_TOO
 if arguments.first == "bash" {
   let runtime = try NanocodeRuntime(dataDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("nanocode-console", isDirectory: true))
   let timeout = ProcessInfo.processInfo.environment["NANOCODE_TIMEOUT_MS"].flatMap(Double.init).map { $0 / 1000 }
-  let python = PythonHost(runtime: runtime)
-  python.start()
   let result = try await runtime.runShell(arguments.dropFirst().joined(separator: " "), timeout: timeout)
   print(result.stdout, terminator: "")
   FileHandle.standardError.write(Data(result.stderr.utf8))
@@ -280,5 +278,6 @@ while true {
   if let error { print("[error] \(error)") }
   if !pending, printed > 1 { break }
 }
+await save(await images(chat), WorkspaceImages(directory: configuration.workspace ?? directory), prefix: session.id)
 let status = try await wallet.status()
 print("[spend] total \(status.total) MACH across \(status.services.count) services")

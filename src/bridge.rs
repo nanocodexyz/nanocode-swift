@@ -266,7 +266,6 @@ fn start(start: Start, outlet: Outlet) -> Result<Handle, String> {
         logins: Atom::default(),
     });
     host.payments.attach(&host);
-    host.shell.attach(Arc::downgrade(&host));
     Ok(Handle { host, runtime })
 }
 

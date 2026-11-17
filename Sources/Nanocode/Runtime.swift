@@ -158,7 +158,6 @@ final class Router: @unchecked Sendable {
     var approve: (@Sendable (ApprovalRequest) async -> ApprovalDecision)?
     var subscriptions: (any SubscriptionStore)?
     var willEdit: (@Sendable (_ sessionID: String, _ paths: [String]) async -> Void)?
-    var python: (@Sendable (String) async throws -> String)?
     var stopped = false
   }
 
@@ -289,20 +288,6 @@ final class Router: @unchecked Sendable {
       Task.detached { [weak self] in
         await willEdit?(body["session_id"]?.string ?? "", body["paths"]?.array?.compactMap(\.string) ?? [])
         self?.send(["command": ["reply": ["id": .number(Double(id)), "ok": .null]]])
-      }
-      return
-    }
-    if call["kind"]?.string == "python" {
-      let python = state.withLock { $0.python }
-      Task.detached { [weak self] in
-        let reply: JSON
-        do {
-          guard let python else { throw NanocodeError("this app runs no Python") }
-          reply = ["id": .number(Double(id)), "ok": .string(try await python(body["request"]?.string ?? "{}"))]
-        } catch {
-          reply = ["id": .number(Double(id)), "error": .string(error.localizedDescription)]
-        }
-        self?.send(["command": ["reply": reply]])
       }
       return
     }
@@ -443,10 +428,6 @@ public final class NanocodeRuntime: @unchecked Sendable {
 
   public func setEditObserver(_ willEdit: @escaping @Sendable (_ sessionID: String, _ paths: [String]) async -> Void) {
     router.state.withLock { $0.willEdit = willEdit }
-  }
-
-  public func setPythonHost(_ run: @escaping @Sendable (_ request: String) async throws -> String) {
-    router.state.withLock { $0.python = run }
   }
 
   public var events: AsyncStream<RuntimeEvent> { router.subscribe() }

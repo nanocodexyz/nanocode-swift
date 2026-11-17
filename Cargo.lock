@@ -1195,7 +1195,7 @@ dependencies = [
  "bitflags 2.13.2",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -3714,6 +3714,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanocode-flags"
+version = "0.7.0"
+
+[[package]]
 name = "nanocode-gif"
 version = "0.7.0"
 
@@ -3772,6 +3776,13 @@ dependencies = [
 
 [[package]]
 name = "nanocode-jpeg"
+version = "0.7.0"
+dependencies = [
+ "nanocode-sys",
+]
+
+[[package]]
+name = "nanocode-libc"
 version = "0.7.0"
 dependencies = [
  "nanocode-sys",
@@ -3837,6 +3848,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanocode-numeric"
+version = "0.7.0"
+
+[[package]]
 name = "nanocode-platform"
 version = "0.7.0"
 dependencies = [
@@ -3894,6 +3909,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanocode-python"
+version = "0.7.0"
+dependencies = [
+ "nanocode-compression",
+ "nanocode-platform",
+ "nanocode-python-capi",
+ "nanocode-shell",
+ "nanocode-sync",
+ "psh-engine",
+ "rustpython-pylib",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_python_parser",
+ "rustpython-stdlib",
+ "rustpython-vm",
+]
+
+[[package]]
+name = "nanocode-python-capi"
+version = "0.7.0"
+dependencies = [
+ "djs-libm",
+ "nanocode-numeric",
+ "nanocode-platform",
+ "rustpython-vm",
+]
+
+[[package]]
 name = "nanocode-schema"
 version = "0.7.0"
 dependencies = [
@@ -3903,6 +3945,17 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-normalization",
+]
+
+[[package]]
+name = "nanocode-shell"
+version = "0.7.0"
+dependencies = [
+ "nanocode-bytes",
+ "psh-classify",
+ "psh-engine",
+ "psh-syntax",
+ "psh-utils",
 ]
 
 [[package]]
@@ -3956,6 +4009,7 @@ dependencies = [
  "nanocode-process-contracts",
  "nanocode-psh",
  "nanocode-psh-embedded",
+ "nanocode-python",
  "nanocode-sync",
  "nanocode-tool-runtime",
  "psh",
@@ -4767,6 +4821,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pymath"
+version = "0.2.0"
+dependencies = [
+ "djs-libm",
+ "nanocode-libc",
+ "nanocode-numeric",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5471,6 +5534,234 @@ dependencies = [
  "ring",
  "rustls-pki-types",
  "untrusted 0.9.0",
+]
+
+[[package]]
+name = "rustpython-codegen"
+version = "0.6.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "memchr",
+ "nanocode-flags",
+ "nanocode-numeric",
+ "nanocode-trace",
+ "rustpython-common",
+ "rustpython-compiler-core",
+ "rustpython-literal",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_text_size",
+ "rustpython-unicode",
+ "rustpython-wtf8",
+]
+
+[[package]]
+name = "rustpython-common"
+version = "0.6.0"
+dependencies = [
+ "memchr",
+ "nanocode-compression",
+ "nanocode-flags",
+ "nanocode-libc",
+ "nanocode-numeric",
+ "nanocode-platform",
+ "nanocode-sys",
+ "rustpython-literal",
+ "rustpython-unicode",
+ "rustpython-wtf8",
+]
+
+[[package]]
+name = "rustpython-compiler"
+version = "0.6.0"
+dependencies = [
+ "rustpython-codegen",
+ "rustpython-compiler-core",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_python_parser",
+ "rustpython-ruff_source_file",
+ "rustpython-ruff_text_size",
+]
+
+[[package]]
+name = "rustpython-compiler-core"
+version = "0.6.0"
+dependencies = [
+ "nanocode-compression",
+ "nanocode-flags",
+ "nanocode-numeric",
+ "rustpython-ruff_source_file",
+ "rustpython-wtf8",
+]
+
+[[package]]
+name = "rustpython-derive"
+version = "0.6.0"
+dependencies = [
+ "nanocode-macro-support",
+ "rustpython-compiler",
+ "rustpython-derive-impl",
+]
+
+[[package]]
+name = "rustpython-derive-impl"
+version = "0.6.0"
+dependencies = [
+ "nanocode-macro-support",
+ "rustpython-compiler-core",
+ "rustpython-doc",
+]
+
+[[package]]
+name = "rustpython-doc"
+version = "0.6.0"
+dependencies = [
+ "nanocode-compression",
+]
+
+[[package]]
+name = "rustpython-host_env"
+version = "0.6.0"
+dependencies = [
+ "memchr",
+ "nanocode-libc",
+ "nanocode-platform",
+ "nanocode-sys",
+ "nanocode-windows-sys",
+ "rustpython-wtf8",
+]
+
+[[package]]
+name = "rustpython-literal"
+version = "0.6.0"
+dependencies = [
+ "rustpython-unicode",
+ "rustpython-wtf8",
+]
+
+[[package]]
+name = "rustpython-pylib"
+version = "0.6.0"
+dependencies = [
+ "rustpython-compiler-core",
+ "rustpython-derive",
+]
+
+[[package]]
+name = "rustpython-ruff_python_ast"
+version = "0.16.5"
+dependencies = [
+ "memchr",
+ "nanocode-flags",
+ "rustpython-ruff_python_trivia",
+ "rustpython-ruff_source_file",
+ "rustpython-ruff_text_size",
+]
+
+[[package]]
+name = "rustpython-ruff_python_parser"
+version = "0.16.5"
+dependencies = [
+ "memchr",
+ "nanocode-flags",
+ "nanocode-sys",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_python_trivia",
+ "rustpython-ruff_text_size",
+ "rustpython-unicode",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "rustpython-ruff_python_trivia"
+version = "0.16.5"
+dependencies = [
+ "rustpython-ruff_source_file",
+ "rustpython-ruff_text_size",
+ "rustpython-unicode",
+]
+
+[[package]]
+name = "rustpython-ruff_source_file"
+version = "0.16.5"
+dependencies = [
+ "memchr",
+ "rustpython-ruff_text_size",
+]
+
+[[package]]
+name = "rustpython-ruff_text_size"
+version = "0.16.5"
+
+[[package]]
+name = "rustpython-sre_engine"
+version = "0.6.0"
+dependencies = [
+ "nanocode-flags",
+ "rustpython-unicode",
+ "rustpython-wtf8",
+]
+
+[[package]]
+name = "rustpython-stdlib"
+version = "0.6.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "memchr",
+ "nanocode-libc",
+ "nanocode-numeric",
+ "nanocode-platform",
+ "pymath",
+ "rustpython-common",
+ "rustpython-derive",
+ "rustpython-host_env",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_python_parser",
+ "rustpython-ruff_source_file",
+ "rustpython-ruff_text_size",
+ "rustpython-unicode",
+ "rustpython-vm",
+]
+
+[[package]]
+name = "rustpython-unicode"
+version = "0.6.0"
+dependencies = [
+ "nanocode-compression",
+ "rustpython-wtf8",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "rustpython-vm"
+version = "0.6.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "memchr",
+ "nanocode-flags",
+ "nanocode-libc",
+ "nanocode-numeric",
+ "nanocode-platform",
+ "nanocode-trace",
+ "rustpython-codegen",
+ "rustpython-common",
+ "rustpython-compiler",
+ "rustpython-compiler-core",
+ "rustpython-derive",
+ "rustpython-host_env",
+ "rustpython-literal",
+ "rustpython-ruff_python_ast",
+ "rustpython-ruff_python_parser",
+ "rustpython-ruff_text_size",
+ "rustpython-sre_engine",
+ "rustpython-unicode",
+]
+
+[[package]]
+name = "rustpython-wtf8"
+version = "0.6.0"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

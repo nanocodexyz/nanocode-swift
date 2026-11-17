@@ -33,13 +33,13 @@ let linked: [Target] = [
   .target(
     name: "Nanocode",
     dependencies: ["NanocodeCore", "NanocodeFFI"],
-    resources: [.copy("Resources/python.js"), .copy("Resources/pyodide-host.js"), .copy("Resources/shell")],
+    resources: [.copy("Resources/shell")],
     linkerSettings: [
       .linkedFramework("Security"),
       .linkedFramework("SystemConfiguration"),
       .linkedFramework("CoreFoundation"),
       .linkedLibrary("resolv"),
-      .linkedFramework("WebKit"),
+      .linkedLibrary("c++"),
     ]
   ),
   .target(name: "NanocodeKit", dependencies: ["NanocodeCore", "Nanocode"]),

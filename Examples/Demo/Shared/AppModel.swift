@@ -106,7 +106,6 @@ final class AppModel {
   let wallet: WalletMonitor
   let plans: PlanMonitor
   let hand: HandMonitor
-  let python: PythonHost
   var catalog: ModelCatalog?
   var conversations: [SessionSummary] = []
   var remotes: [RemoteConversation] = []
@@ -152,7 +151,6 @@ final class AppModel {
     hand = HandMonitor(runtime: runtime)
     plans = PlanMonitor(runtime: runtime, store: KeychainSubscriptionStore(service: "xyz.nanocode.demo.plans"))
     cloudHand = HandMonitor(runtime: runtime, id: "cloud")
-    python = PythonHost(runtime: runtime)
     do {
       remoteStore = try RemoteStore(directory: runtime.dataDirectory.appendingPathComponent("remote", isDirectory: true))
     } catch {
@@ -319,7 +317,6 @@ final class AppModel {
 
   func start() async {
     DeviceTools.configure(DeviceSettings(app: "Nanocode", hand: Self.handName, scheme: "nanocodedemo", composer: .system))
-    python.start()
     catalog = try? await runtime.models()
     if access == .tempo { await loadWallet() }
     if access == .plan { await loadPlans() }
