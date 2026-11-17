@@ -31540,7 +31540,7 @@ zstd: *.zst, *.zstd
 		const names = /* @__PURE__ */ new Map();
 		const bytes = /* @__PURE__ */ new Map();
 		const trees = /* @__PURE__ */ new Set();
-		const batched = /* @__PURE__ */ new Set();
+		const asked = /* @__PURE__ */ new Set();
 		const wanted = {
 			list: /* @__PURE__ */ new Set(),
 			read: /* @__PURE__ */ new Set(),
@@ -31570,8 +31570,26 @@ zstd: *.zst, *.zstd
 			if (files.has(path)) return "file";
 			if (dirs.has(path)) return "directory";
 			if (hidden(path)) return void 0;
-			if (!stats.has(path)) throw miss(wanted.stat, path);
+			if (!stats.has(path) && !absent(path)) throw miss(wanted.stat, path);
 			return stats.get(path)?.kind;
+		};
+		const listing = async (dirs) => {
+			for (const dir of new Set(dirs)) {
+				if (!stats.has(dir)) keepStat(dir, await fs.stat(dir));
+				if (names.has(dir) || stats.get(dir)?.kind !== "directory") continue;
+				const children = await fs.list(dir);
+				if (fits(weight(children))) keepNames(dir, children);
+			}
+		};
+		const absent = (path) => {
+			if (path === "/") return false;
+			const up = parentOf(path);
+			if (files.has(up)) return true;
+			if (dirs.has(up)) return false;
+			if (stats.has(up) && stats.get(up)?.kind !== "directory") return true;
+			const listed = names.get(up);
+			if (listed) return !listed.includes(path.slice(up === "/" ? 1 : up.length + 1));
+			return absent(up);
 		};
 		const read = (path) => {
 			const own = files.get(path);
@@ -31657,13 +31675,30 @@ zstd: *.zst, *.zstd
 		};
 		const filesIn = (dir) => (names.get(dir) ?? []).map((name) => join$1(dir, name)).filter((path) => stats.get(path)?.kind === "file");
 		const filesUnder = (root) => [...stats].filter((entry) => entry[1]?.kind === "file" && within$1(entry[0], root)).map((entry) => entry[0]);
+		const sizeOf = (files) => files.reduce((total, file) => total + (stats.get(file)?.size ?? 0), 0);
+		const likely = (root, path) => {
+			const like = filesUnder(root).filter((file) => file !== path && !bytes.has(file) && asked.has(suffixOf(file))).sort();
+			const after = like.findIndex((file) => file > path);
+			const from = after < 0 ? like.length : after;
+			const taken = [];
+			let total = 0;
+			for (const file of [
+				path,
+				...like.slice(from),
+				...like.slice(0, from)
+			]) {
+				const size = stats.get(file)?.size ?? 0;
+				if (!fits(2 * (total + size))) continue;
+				taken.push(file);
+				total += size;
+			}
+			return taken;
+		};
 		const batch = (path) => {
 			const dir = parentOf(path);
-			const root = batched.size > 1 ? [...trees].find((tree) => within$1(path, tree)) : void 0;
-			const pool = [root ? filesUnder(root) : [], filesIn(dir).some((sibling) => bytes.has(sibling)) ? filesIn(dir) : []].map((pool) => pool.filter((file) => !bytes.has(file))).find((files) => files.includes(path) && fits(files.reduce((total, file) => total + (stats.get(file)?.size ?? 0), 0)));
-			if (!pool) return [path];
-			batched.add(dir);
-			return pool;
+			const tree = [...trees].find((tree) => within$1(path, tree));
+			const root = tree && [...bytes.keys()].some((file) => within$1(file, tree)) ? tree : void 0;
+			return [root ? likely(root, path) : [], filesIn(dir).some((sibling) => bytes.has(sibling)) ? filesIn(dir) : []].map((pool) => pool.filter((file) => !bytes.has(file))).find((files) => files.includes(path) && fits(sizeOf(files))) ?? [path];
 		};
 		const fetchTree = async (path) => {
 			const stat = stats.has(path) ? stats.get(path) : await fs.stat(path);
@@ -31690,6 +31725,7 @@ zstd: *.zst, *.zstd
 			}),
 			async fetch() {
 				for (const path of wanted.stat) keepStat(path, await fs.stat(path));
+				await listing([...wanted.stat].map(parentOf));
 				for (const path of wanted.list) {
 					const up = parentOf(path);
 					const siblings = path === "/" ? void 0 : names.get(up);
@@ -31703,6 +31739,7 @@ zstd: *.zst, *.zstd
 						if (!stats.has(child)) keepStat(child, await fs.stat(child));
 					}
 				}
+				for (const path of wanted.read) asked.add(suffixOf(path));
 				await fetchAll([...new Set([...wanted.read].flatMap(batch))]);
 				for (const path of wanted.tree) {
 					await prefetch(path);
@@ -31759,6 +31796,7 @@ zstd: *.zst, *.zstd
 				write
 			},
 			missed: () => missing,
+			probe: listing,
 			reset() {
 				missing = false;
 				files = /* @__PURE__ */ new Map();
@@ -31771,6 +31809,11 @@ zstd: *.zst, *.zstd
 	}
 	function join$1(base, name) {
 		return base === "/" ? "/" + name : base + "/" + name;
+	}
+	function suffixOf(path) {
+		const name = path.slice(path.lastIndexOf("/") + 1);
+		const dot = name.lastIndexOf(".");
+		return dot > 0 ? name.slice(dot) : "";
 	}
 	function within$1(path, dir) {
 		return path === dir || path.startsWith(dir === "/" ? "/" : dir + "/");
@@ -33271,14 +33314,17 @@ async def run(request):
 		}
 	}
 	const packagedRust = {};
+	const packagedPython = "../../../python.wasm";
+	const sitePackages = "/usr/local/lib/python3.14/site-packages";
 	function rustModule(options) {
 		if (options.module === false) return Promise.resolve(void 0);
 		if (options.module) return Promise.resolve(options.module);
 		packagedRust.module ??= (async () => {
 			const fs = globalThis.process?.getBuiltinModule?.("node:fs");
-			const resolve = {}.resolve;
-			if (!fs || !resolve || !canCompile()) return void 0;
-			const bytes = await fs.promises.readFile(new URL(resolve("nanocode-ts/python.wasm")));
+			const meta = {};
+			const url = meta.resolve ? new URL(meta.resolve("nanocode-ts/python.wasm")) : meta.url ? new URL(packagedPython, meta.url) : void 0;
+			if (!fs || !url || !canCompile()) return void 0;
+			const bytes = await fs.promises.readFile(url);
 			const compile = WebAssembly.compile;
 			return compile(bytes);
 		})().catch(() => void 0);
@@ -33371,6 +33417,7 @@ async def run(request):
 			spawn,
 			stopped: () => ctx.signal.aborted || (cache?.missed() ?? false)
 		});
+		await cache?.probe([ctx.cwd, sitePackages]);
 		let ran = attempt();
 		while (cache?.missed()) {
 			await cache.fetch();
