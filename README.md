@@ -59,7 +59,7 @@ await chat.send("What device am I on?")
 | `NanocodeViews` | SwiftUI views over `NanocodeCore`, for SwiftUI hosts. |
 | `NanocodeComputer` | macOS computer use over Accessibility and ScreenCaptureKit, served as an MCP server on stdio from inside your app, so the app's own permissions cover it. No Rust. |
 
-`Package.swift` downloads the prebuilt `NanocodeFFI` XCFramework that `ffi-release.json` names (78 MB zipped for ffi-91b6c1c23802a8dbbfe1, with macOS for arm64 and x86_64, iOS, and the iOS simulator for arm64 only: the SDK does not build for the Intel simulator), so depending on the package builds no Rust. An app that uses only `NanocodeCore`, `NanocodeViews` or `NanocodeComputer` sets `NANOCODE_WITHOUT_FFI=1` where it resolves packages, and SwiftPM leaves the XCFramework out instead of downloading it.
+`Package.swift` downloads the prebuilt `NanocodeFFI` XCFramework that `ffi-release.json` names (86 MB zipped for ffi-f1a2e971246b31ca62a9, with macOS for arm64 and x86_64, iOS, and the iOS simulator for arm64 only: the SDK does not build for the Intel simulator), so depending on the package builds no Rust. An app that uses only `NanocodeCore`, `NanocodeViews` or `NanocodeComputer` sets `NANOCODE_WITHOUT_FFI=1` where it resolves packages, and SwiftPM leaves the XCFramework out instead of downloading it.
 
 ## Quickstart
 
@@ -84,7 +84,7 @@ With no API key configured, sessions pay through the connected Tempo Wallet (`Wa
 
 ## Building the library
 
-`scripts/build-ffi.sh` builds the Rust crate in `src/` against the SDK at `sdk-revision.json` (nanocode c471ca8d5, from a checkout of [nanocodex](https://github.com/nanocodexyz/nanocode) beside this one) and writes `build/NanocodeFFI.xcframework`, which the package then uses instead of the release. `scripts/build-shell.sh` bundles nanocode-ts's simulated bash and its Python front end into the package's resources from the revision in `ts-revision.json`.
+`scripts/build-ffi.sh` builds the Rust crate in `src/` against the SDK at `sdk-revision.json` (nanocode 101176e2b, from a checkout of [nanocodex](https://github.com/nanocodexyz/nanocode) beside this one) and writes `build/NanocodeFFI.xcframework`, which the package then uses instead of the release. `scripts/build-shell.sh` bundles nanocode-ts's simulated bash and its Python front end into the package's resources from the revision in `ts-revision.json`.
 
 CI (`.github/workflows/ci.yml`) runs on every push: it builds the package with the release and without the FFI, the Console, C and Python examples, and the demo for macOS and the iOS simulator, and runs `cargo check` on the crate against the SDK revision.
 

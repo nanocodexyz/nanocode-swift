@@ -198,7 +198,45 @@ static PLATFORM: Platform = Platform {
     fallback: std::sync::OnceLock::new(),
 };
 
+#[cfg(target_os = "macos")]
+#[used]
+#[unsafe(link_section = "__DATA,__mod_init_func")]
+static SERVE_PSH: extern "C" fn() = serve_psh;
+
+#[cfg(target_os = "macos")]
+extern "C" fn serve_psh() {
+    if let Some(code) = nanocode_psh::serve_if_requested(psh::run) {
+        let status = (0..=u8::MAX)
+            .find(|status| std::process::ExitCode::from(*status) == code)
+            .unwrap_or(1);
+        std::process::exit(status.into());
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn choose_psh() -> Result<(), String> {
+    std::hint::black_box(SERVE_PSH);
+    let shell = nanocode_psh::shell().map_err(|error| format!("psh: {error}"))?;
+    if let Err(psh) = nanocode_home::shell::choose(shell) {
+        return match nanocode_home::shell::chosen() {
+            Some(chosen) if chosen != psh => Err(format!(
+                "this process chose {} as its shell instead of psh",
+                chosen.path().display()
+            )),
+            _ => Ok(()),
+        };
+    }
+    let _ = nanocode_psh_embedded::embed();
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn choose_psh() -> Result<(), String> {
+    Ok(())
+}
+
 fn start(start: Start, outlet: Outlet) -> Result<Handle, String> {
+    choose_psh()?;
     nanocode::codex::transport::install_default_rustls_crypto_provider();
     if nanocode::platform::host().is_none() {
         let _ = nanocode::platform::install(&PLATFORM);

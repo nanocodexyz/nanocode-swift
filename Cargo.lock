@@ -3879,6 +3879,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanocode-psh"
+version = "0.7.0"
+dependencies = [
+ "nanocode-home",
+]
+
+[[package]]
+name = "nanocode-psh-embedded"
+version = "0.7.0"
+dependencies = [
+ "nanocode-process",
+ "psh",
+]
+
+[[package]]
 name = "nanocode-schema"
 version = "0.7.0"
 dependencies = [
@@ -3934,12 +3949,16 @@ dependencies = [
  "mpp",
  "nanocode",
  "nanocode-code-mode",
+ "nanocode-home",
  "nanocode-http",
  "nanocode-mcp",
  "nanocode-mcp-tools",
  "nanocode-process-contracts",
+ "nanocode-psh",
+ "nanocode-psh-embedded",
  "nanocode-sync",
  "nanocode-tool-runtime",
+ "psh",
  "rand 0.9.5",
  "reqwest",
  "rquickjs",
@@ -4133,6 +4152,13 @@ dependencies = [
  "nanocode-sync",
  "nanocode-sys",
  "nanocode-tls",
+]
+
+[[package]]
+name = "nanocode-windows-sys"
+version = "0.7.0"
+dependencies = [
+ "nanocode-sys",
 ]
 
 [[package]]
@@ -4663,6 +4689,72 @@ dependencies = [
  "rand_xorshift",
  "regex-syntax",
  "unarray",
+]
+
+[[package]]
+name = "psh"
+version = "0.0.0"
+dependencies = [
+ "psh-classify",
+ "psh-engine",
+ "psh-os",
+ "psh-syntax",
+ "psh-utils",
+]
+
+[[package]]
+name = "psh-classify"
+version = "0.0.0"
+dependencies = [
+ "psh-syntax",
+]
+
+[[package]]
+name = "psh-engine"
+version = "0.0.0"
+dependencies = [
+ "psh-regex",
+ "psh-syntax",
+]
+
+[[package]]
+name = "psh-os"
+version = "0.0.0"
+dependencies = [
+ "nanocode-sys",
+ "nanocode-windows-sys",
+ "psh-engine",
+]
+
+[[package]]
+name = "psh-pattern"
+version = "0.0.0"
+dependencies = [
+ "memchr",
+ "nanocode-sys",
+]
+
+[[package]]
+name = "psh-regex"
+version = "0.0.0"
+
+[[package]]
+name = "psh-syntax"
+version = "0.0.0"
+
+[[package]]
+name = "psh-utils"
+version = "0.0.0"
+dependencies = [
+ "djs-libm",
+ "memchr",
+ "nanocode-compression",
+ "nanocode-digest",
+ "nanocode-sys",
+ "psh-classify",
+ "psh-engine",
+ "psh-pattern",
+ "psh-regex",
 ]
 
 [[package]]
