@@ -88,7 +88,7 @@ With no API key configured, sessions pay through the connected Tempo Wallet (`Wa
 
 ## Building the library
 
-`scripts/build-ffi.sh` builds the Rust crate in `src/` against the SDK at `sdk-revision.json` (nanocode bc010036a, from a checkout of [nanocodex](https://github.com/nanocodexyz/nanocode) beside this one) and writes `build/NanocodeFFI.xcframework`, which the package then uses instead of the release. `scripts/build-shell.sh` bundles nanocode-ts's simulated bash, with its `pip`, into the package's resources from the revision in `ts-revision.json`.
+`scripts/build-ffi.sh` builds the Rust crate in `src/` against the SDK at `sdk-revision.json` (nanocode f5493919e, from a checkout of [nanocodex](https://github.com/nanocodexyz/nanocode) beside this one) and writes `build/NanocodeFFI.xcframework`, which the package then uses instead of the release. `scripts/build-shell.sh` bundles nanocode-ts's simulated bash, with its `pip`, into the package's resources from the revision in `ts-revision.json`.
 
 CI (`.github/workflows/ci.yml`) runs on every push: it builds the package with the release and without the FFI, the Console, C and Python examples, and the demo for macOS and the iOS simulator, and runs `cargo check` on the crate against the SDK revision.
 
