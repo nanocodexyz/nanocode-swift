@@ -1,6 +1,6 @@
 # nanocode-swift
 
-The [nanocode](https://nanocode.xyz) agent SDK on Apple platforms: Claude and Codex agents that run natively inside a macOS or iOS app, with durable sessions in a local SQLite file, Code Mode cells in an embedded QuickJS, the SDK's workspace tools (on iOS, where apps cannot start processes, over [nanocode-ts](https://github.com/nanocodexyz/nanocode-ts)'s simulated bash on the app's real files, with WebAssembly and WASI programs on an embedded wasmi, and `python3` with numpy, matplotlib and pip on nanocode's own Python, linked into the library), device tools, hands and runners, and models and tools paid per request from a Tempo Wallet over MPP. It is the Swift sibling of [nanocode-ts](https://github.com/nanocodexyz/nanocode-ts): the same SDK, compiled into a static library instead of WebAssembly, with its UI written in AppKit and UIKit.
+The [nanocode](https://nanocode.xyz) agent SDK on Apple platforms: Claude and Codex agents that run natively inside a macOS or iOS app, with durable sessions in a local SQLite file, Code Mode cells in an embedded QuickJS, the SDK's workspace tools (on iOS, where apps cannot start processes, over [nanocode-ts](https://github.com/nanocodexyz/nanocode-ts)'s simulated bash on the app's real files, with WebAssembly and WASI programs on an embedded wasmi, and `python3` with numpy, matplotlib and pip on nanocode's own Python, linked into the library), device tools, hands and runners, and models and tools paid per request over MPP with a Tempo ID access key. It is the Swift sibling of [nanocode-ts](https://github.com/nanocodexyz/nanocode-ts): the same SDK, compiled into a static library instead of WebAssembly, with its UI written in AppKit and UIKit.
 
 <table>
   <tr>
@@ -17,7 +17,7 @@ The [nanocode](https://nanocode.xyz) agent SDK on Apple platforms: Claude and Co
   <tr>
     <td><img src="assets/demo-chatgpt-phone.gif" alt="ChatGPT style at phone width in dark mode" width="260"></td>
     <td><img src="assets/demo-claude-phone.gif" alt="Claude style at phone width in dark mode" width="260"></td>
-    <td>The same views at 390 points wide, in dark mode: the sidebar becomes a drawer, the header gains its sidebar and new-chat buttons, and the bubbles, hero and composer follow the clones' mobile layout. Each recording is the demo app with a real model, paid from a Tempo CLI wallet.</td>
+    <td>The same views at 390 points wide, in dark mode: the sidebar becomes a drawer, the header gains its sidebar and new-chat buttons, and the bubbles, hero and composer follow the clones' mobile layout. Each recording is the demo app with a real model, paid through a Tempo ID access key.</td>
   </tr>
 </table>
 
@@ -78,11 +78,11 @@ await chat.attach(session)
 let controller = NanocodeChatViewController(chat: chat, skin: .claude)
 ```
 
-With no API key configured, sessions pay through the connected Tempo Wallet (`WalletMonitor.connect()`, or `useTempoCLI()` on macOS). `SessionConfiguration` also takes instructions, host tools (`HostTool`), a workspace directory, MCP servers and hands.
+With no API key configured, sessions pay in MACH over MPP with an access key from Tempo ID (`WalletMonitor.connect()`): the library asks [id.tempo.xyz](https://id.tempo.xyz) for the key through its device grant as `cli:nanocode`, the owner approves the shown code with a passkey, and the key, limited to 2 MACH plus 0.1 USDC.e and 0.1 pathUSD in fees for a day, stays in the Keychain. `fundingURL(account:)` opens Tempo ID's deposit page to buy MACH. `SessionConfiguration` also takes instructions, host tools (`HostTool`), a workspace directory, MCP servers and hands.
 
 ## Examples
 
-- `Examples/Demo` is the nanocode.xyz demo: an AppKit app for macOS and a UIKit app for iOS, in the ChatGPT or Claude style, with conversations from the store, the model menu, a Tempo Wallet, device tools (`device_info`, `open_url`, `clipboard`, `speak`, and with the user's permission photos, contacts, calendar, reminders, location, notifications, the microphone, Bluetooth, messages and email drafts, Shortcuts, and on iOS the camera, motion and music), a workspace folder chosen from Finder or the Files app, a computer attached through the relay and this device as a hand. Run `xcodegen generate` in it and open `NanocodeDemo.xcodeproj`.
+- `Examples/Demo` is the nanocode.xyz demo: an AppKit app for macOS and a UIKit app for iOS, in the ChatGPT or Claude style, with conversations from the store, the model menu, Tempo ID sign-in, device tools (`device_info`, `open_url`, `clipboard`, `speak`, and with the user's permission photos, contacts, calendar, reminders, location, notifications, the microphone, Bluetooth, messages and email drafts, Shortcuts, and on iOS the camera, motion and music), a workspace folder chosen from Finder or the Files app, a computer attached through the relay and this device as a hand. Run `xcodegen generate` in it and open `NanocodeDemo.xcodeproj`.
 - `Examples/Demo/AppKit` and `Examples/Demo/UIKit` are the smallest hosts: an `NSWindow` and a `UINavigationController` around `NanocodeChatViewController`.
 - `Examples/Console` is a terminal client: `Console remote cloudflare|vercel [prompts…]` chats with a deployment and reopens the conversation from its journal, `Console remote-resume [id]` follows a turn a killed process left running and saves the images it shows, `Console bash <script>` runs a script in the simulated shell, and `Console hand <url> <token>` makes the process a hand.
 

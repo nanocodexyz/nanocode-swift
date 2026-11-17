@@ -77,7 +77,6 @@ pub struct Wallet {
     pub account: Address,
     pub key: Address,
     pub source: &'static str,
-    pub shared_channels: bool,
     generation: u64,
 }
 
@@ -114,7 +113,7 @@ struct Inner {
 pub struct Payments(Arc<Inner>);
 
 impl Payments {
-    pub fn new(_tempo_home: Option<PathBuf>, directory: PathBuf) -> Self {
+    pub fn new(directory: PathBuf) -> Self {
         let payments = Self(Arc::new(Inner {
             wallet: Atom::default(),
             services: Atom::default(),
@@ -189,7 +188,6 @@ impl Payments {
         account: Address,
         key: Address,
         source: &'static str,
-        shared_channels: bool,
     ) -> Result<(), String> {
         let provider = provider
             .with_expected_chain_id(CHAIN_ID)
@@ -202,7 +200,6 @@ impl Payments {
             account,
             key,
             source,
-            shared_channels,
             generation,
         }));
         self.0.services.set(HashMap::new());
@@ -239,7 +236,7 @@ impl Payments {
         }
         let store = SqliteChannelStore::open(SqliteChannelStoreOptions {
             namespace: origin.clone(),
-            path: (!wallet.shared_channels).then(|| self.0.channels.clone()),
+            path: Some(self.0.channels.clone()),
             request_url: Some(url.to_string()),
         })
         .map_err(|error| format!("open the payment channel store: {error}"))?;
@@ -451,7 +448,7 @@ fn symbol(currency: &str) -> String {
     }
 }
 
-const WALLET_REQUIRED: &str = "tempo_wallet_required: this model is paid with Tempo machine payments and no Tempo Wallet is connected, so nothing was sent. Connect a Tempo Wallet in the app, then send the message again.";
+const TEMPO_ID_REQUIRED: &str = "tempo_id_required: this model is paid with Tempo machine payments and no Tempo account is connected, so nothing was sent. Sign in with Tempo ID in the app, then send the message again.";
 
 #[derive(Clone)]
 pub struct Mpp {
@@ -486,7 +483,7 @@ impl Layer for Mpp {
                 .service_wallet(&url, MODEL_DEPOSIT)
                 .map_err(|error| layer::Error::new(error).unsent(true))?
             else {
-                return Err(layer::Error::new(WALLET_REQUIRED).unsent(true));
+                return Err(layer::Error::new(TEMPO_ID_REQUIRED).unsent(true));
             };
             self.preconnect(generation, &wallet).await;
             let mut paid = reqwest::Request::new(to_http_method(&request.method)?, url);
@@ -568,17 +565,17 @@ pub fn explain(text: &str) -> String {
             && text.to_lowercase().contains(&USDC.to_lowercase()))
     {
         return format!(
-            "Publishing the key needs a little USDC.e for its fee, and the wallet holds too little. Add USDC.e in Tempo Wallet, then try again. ({text})"
+            "Publishing the key needs a little USDC.e for its fee, and the Tempo account holds too little. Add USDC.e on Tempo ID's deposit page, then try again. ({text})"
         );
     }
     if text.contains("InsufficientBalance") {
         return format!(
-            "The Tempo Wallet holds too little MACH for this payment. Add MACH in Tempo Wallet, then try again. ({text})"
+            "The Tempo account holds too little MACH for this payment. Buy MACH on Tempo ID's deposit page, then try again. ({text})"
         );
     }
     if text.contains("SpendingLimitExceeded") {
         return format!(
-            "The access key's limit is spent. Disconnect and connect the Tempo Wallet again to approve another key. ({text})"
+            "The access key's limit is spent. Sign out and sign in with Tempo ID again to approve another key. ({text})"
         );
     }
     format!("payment failed: {text}")
@@ -751,7 +748,7 @@ impl McpPayments {
             return Ok(None);
         };
         let Some((_, wallet)) = self.payments.service_wallet(&self.url, TOOL_DEPOSIT)? else {
-            return Err(WALLET_REQUIRED.replace("this model", "this tool"));
+            return Err(TEMPO_ID_REQUIRED.replace("this model", "this tool"));
         };
         let payment = McpPayment::new(
             wallet.clone(),

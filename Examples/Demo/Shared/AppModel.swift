@@ -75,7 +75,7 @@ enum Access: String, CaseIterable, Identifiable {
   var id: String { rawValue }
   var label: String {
     switch self {
-    case .tempo: "Tempo Wallet"
+    case .tempo: "Tempo ID"
     case .plan: "ChatGPT or Claude plan"
     case .keys: "API keys"
     }
@@ -147,7 +147,7 @@ final class AppModel {
     } catch {
       fatalError("the nanocode runtime did not start: \(error)")
     }
-    wallet = WalletMonitor(runtime: runtime, name: "nanocode for \(AppModel.platform)", website: "https://nanocode.xyz")
+    wallet = WalletMonitor(runtime: runtime, name: "nanocode for \(AppModel.platform)")
     hand = HandMonitor(runtime: runtime)
     plans = PlanMonitor(runtime: runtime, store: KeychainSubscriptionStore(service: "xyz.nanocode.demo.plans"))
     cloudHand = HandMonitor(runtime: runtime, id: "cloud")
@@ -320,7 +320,6 @@ final class AppModel {
     catalog = try? await runtime.models()
     if access == .tempo { await loadWallet() }
     if access == .plan { await loadPlans() }
-    if UserDefaults.standard.string(forKey: "NanocodeWallet") == "cli" { await wallet.useTempoCLI() }
     if let provider = UserDefaults.standard.string(forKey: "NanocodeProvider").flatMap(Provider.init(rawValue:)),
        let model = UserDefaults.standard.string(forKey: "NanocodeModel") {
       self.provider = provider

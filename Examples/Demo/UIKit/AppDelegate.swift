@@ -40,10 +40,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
   @objc func showWallet() {
     guard let wallet else { return }
     let status = wallet.status
-    let message = status?.account.map { "\($0)\nSpent \(status?.total ?? "0") MACH" } ?? "No wallet is connected."
-    let alert = UIAlertController(title: "Tempo Wallet", message: message, preferredStyle: .alert)
+    let message = status?.account.map { "\($0)\nSpent \(status?.total ?? "0") MACH" } ?? "No Tempo account is signed in."
+    let alert = UIAlertController(title: "Tempo ID", message: message, preferredStyle: .alert)
     if status?.account == nil {
-      alert.addAction(UIAlertAction(title: "Connect", style: .default) { _ in Task { await wallet.connect() } })
+      alert.addAction(UIAlertAction(title: "Sign in", style: .default) { _ in Task { await wallet.connect() } })
     }
     alert.addAction(UIAlertAction(title: "OK", style: .cancel))
     window?.rootViewController?.present(alert, animated: true)

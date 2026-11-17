@@ -335,24 +335,21 @@ final class SettingsNode: Stack {
     let monitor = model.wallet
     var rows: [Node] = []
     if let status = monitor.status, status.connected, let account = status.account {
-      rows.append(row("Wallet", detail: status.source == "tempo-cli" ? "Tempo CLI" : "Access key from Tempo Wallet"))
+      rows.append(row("Account", detail: "Access key from Tempo ID"))
       rows.append(block(mono(account, size: 12)))
       rows.append(row("Spent", trailing: [text("\(status.total) MACH", 15, .regular, skin.muted, lines: 1)]))
       for service in status.services {
         rows.append(row(service.id, detail: "\(service.requests) requests", trailing: [text("\(service.spent) \(service.symbol)", 15, .regular, skin.muted, lines: 1)]))
       }
       rows.append(action("Add MACH", disclosure: true) { Task { if let url = await monitor.fundingURL() { NanocodeKit.open(url) } } })
-      rows.append(action("Disconnect", destructive: true) { Task { await monitor.disconnect() } })
+      rows.append(action("Sign out", destructive: true) { Task { await monitor.disconnect() } })
     } else if let prompt = monitor.prompt {
-      rows.append(row("Approve this device in Tempo Wallet"))
+      rows.append(row("Approve this device in Tempo ID"))
       rows.append(block(mono(prompt.userCode, size: 28, weight: .bold)))
-      rows.append(action("Open Tempo Wallet", strong: true, disclosure: true) { NanocodeKit.open(prompt.verificationURIComplete ?? prompt.verificationURI) })
+      rows.append(action("Open Tempo ID", strong: true, disclosure: true) { NanocodeKit.open(prompt.verificationURIComplete ?? prompt.verificationURI) })
     } else {
-      rows.append(row("Tempo Wallet", detail: "Models and tools are paid per request in MACH over MPP."))
-      rows.append(action(monitor.connecting ? "Connecting…" : "Connect Tempo Wallet", strong: true) { Task { await monitor.connect() } })
-      #if os(macOS)
-      rows.append(action("Use Tempo CLI Wallet") { Task { await monitor.useTempoCLI() } })
-      #endif
+      rows.append(row("Tempo ID", detail: "Models and tools are paid per request in MACH over MPP."))
+      rows.append(action(monitor.connecting ? "Signing in…" : "Sign in with Tempo ID", strong: true) { Task { await monitor.connect() } })
     }
     if let error = monitor.error { rows.append(note(error, color: skin.danger)) }
     card(wallet, rows)

@@ -46,8 +46,6 @@ type Pending = oneshot::Sender<Result<Value, String>>;
 #[serde(deny_unknown_fields)]
 pub struct Start {
     pub data_dir: PathBuf,
-    #[serde(default)]
-    pub tempo_home: Option<PathBuf>,
     pub shell: PathBuf,
 }
 
@@ -246,7 +244,7 @@ fn start(start: Start, outlet: Outlet) -> Result<Handle, String> {
         .thread_name("nanocode")
         .build()
         .map_err(|error| error.to_string())?;
-    let payments = Payments::new(start.tempo_home.clone(), start.data_dir.join("payments"));
+    let payments = Payments::new(start.data_dir.join("payments"));
     let host = Arc::new(Host {
         outlet,
         calls: Atom::default(),

@@ -107,18 +107,13 @@ public struct Wallet: Sendable {
     return PaymentStatus(status)
   }
 
-  public func connect(name: String, website: String? = nil, icon: String? = nil) async throws -> WalletRecord {
-    var meta: [String: JSON] = ["name": .string(name)]
-    if let website { meta["website"] = .string(website) }
-    if let icon { meta["icon"] = .string(icon) }
-    let result = try await runtime.command("wallet_connect", .object(meta))
-    guard let record = WalletRecord(result) else { throw NanocodeError("Tempo Wallet returned an unreadable key") }
+  /// Signs in with Tempo ID through its device grant: `name` is the device name Tempo ID's approval page
+  /// shows, and `DevicePrompt` (`RuntimeEvent.walletPrompt`) carries the code the owner approves there.
+  public func connect(name: String) async throws -> WalletRecord {
+    let result = try await runtime.command("wallet_connect", ["name": .string(name)])
+    guard let record = WalletRecord(result) else { throw NanocodeError("Tempo ID returned an unreadable access key") }
     try Keychain.save(record.json.data(), service: Self.keychainService, account: "access-key")
     return record
-  }
-
-  public func useTempoCLI() async throws -> PaymentStatus {
-    PaymentStatus(try await runtime.command("wallet_cli"))
   }
 
   public func disconnect() async throws {
@@ -130,6 +125,7 @@ public struct Wallet: Sendable {
     PaymentStatus(try await runtime.command("payments"))
   }
 
+  /// Tempo ID's deposit page for `account`, which offers Buy MACH and the other ways to add funds.
   public func fundingURL(account: String) async throws -> URL? {
     (try await runtime.command("funding_url", ["account": .string(account)])).string.flatMap(URL.init(string:))
   }
