@@ -147,8 +147,62 @@ struct Reply<'a> {
     error: Option<&'a str>,
 }
 
+struct Platform {
+    fallback: std::sync::OnceLock<tokio::runtime::Runtime>,
+}
+
+impl Platform {
+    fn runtime(&self) -> tokio::runtime::Handle {
+        tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
+            self.fallback
+                .get_or_init(|| {
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(2)
+                        .enable_all()
+                        .thread_name("nanocode-platform")
+                        .build()
+                        .expect("the platform runtime starts")
+                })
+                .handle()
+                .clone()
+        })
+    }
+}
+
+impl nanocode::platform::Host for Platform {
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
+    fn system_time(&self) -> std::time::SystemTime {
+        std::time::SystemTime::now()
+    }
+
+    fn sleep(&self, duration: std::time::Duration) -> nanocode::platform::HostFuture {
+        let runtime = self.runtime();
+        let _entered = runtime.enter();
+        Box::pin(tokio::time::sleep(duration))
+    }
+
+    fn fill_random(&self, bytes: &mut [u8]) -> std::io::Result<()> {
+        rand::RngCore::fill_bytes(&mut rand::rng(), bytes);
+        Ok(())
+    }
+
+    fn spawn(&self, future: nanocode::platform::HostFuture) {
+        drop(self.runtime().spawn(future));
+    }
+}
+
+static PLATFORM: Platform = Platform {
+    fallback: std::sync::OnceLock::new(),
+};
+
 fn start(start: Start, outlet: Outlet) -> Result<Handle, String> {
     nanocode::codex::transport::install_default_rustls_crypto_provider();
+    if nanocode::platform::host().is_none() {
+        let _ = nanocode::platform::install(&PLATFORM);
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("nanocode")

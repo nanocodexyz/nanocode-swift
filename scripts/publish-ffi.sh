@@ -22,5 +22,5 @@ printf '{\n  "url": "%s",\n  "checksum": "%s",\n  "fingerprint": "%s"\n}\n' "$ur
 if [[ "${1:-}" == --upload ]]; then
   gh release create "$tag" build/NanocodeFFI.xcframework.zip ffi-release.json --repo "$repository" \
     --title "NanocodeFFI $fingerprint" \
-    --notes "The nanocode SDK at $(jq -r .revision sdk-revision.json) built for macOS, iOS and the iOS simulator ($([[ "${UNIVERSAL:-1}" == 1 ]] && echo "arm64 and x86_64" || echo "arm64 only")). Package.swift reads ffi-release.json."
+    --notes "The nanocode SDK at $(jq -r .revision sdk-revision.json) built for macOS ($([[ "${UNIVERSAL:-1}" == 1 ]] && echo "arm64 and x86_64" || echo "arm64 only")), iOS and the iOS simulator (arm64). Package.swift reads ffi-release.json."
 fi

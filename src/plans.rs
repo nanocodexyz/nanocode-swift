@@ -30,14 +30,14 @@ const CHATGPT_ISSUER: &str = "https://auth.openai.com";
 #[derive(Clone)]
 struct Store {
     host: Weak<Host>,
-    http: reqwest::Client,
+    http: nanocode_http::Client,
 }
 
 impl Store {
     fn of(host: &Arc<Host>) -> Self {
         Self {
             host: Arc::downgrade(host),
-            http: reqwest::Client::new(),
+            http: nanocode_http::Client::new(),
         }
     }
 
@@ -74,10 +74,10 @@ impl Store {
         &self,
         method: &str,
         url: &str,
-        headers: reqwest::header::HeaderMap,
+        headers: nanocode_http::header::HeaderMap,
         body: String,
     ) -> Option<(u16, String)> {
-        let method = reqwest::Method::from_bytes(method.as_bytes()).ok()?;
+        let method = nanocode_http::Method::from_bytes(method.as_bytes()).ok()?;
         let mut request = self.http.request(method, url).headers(headers);
         if !body.is_empty() {
             request = request.body(body);
@@ -126,8 +126,8 @@ impl ClaudeSubscriptionHost for Store {
             let mut headers = request.headers().clone();
             if !request.body().is_empty() {
                 headers.insert(
-                    reqwest::header::CONTENT_TYPE,
-                    reqwest::header::HeaderValue::from_static(request.content_type()),
+                    nanocode_http::header::CONTENT_TYPE,
+                    nanocode_http::header::HeaderValue::from_static(request.content_type()),
                 );
             }
             let (status, body) = self
@@ -179,9 +179,10 @@ impl ChatGptSubscriptionHost for Store {
         request: SubscriptionHttpRequest,
     ) -> BoxFuture<'a, Result<SubscriptionHttpResponse, SubscriptionHostError>> {
         Box::pin(async move {
-            let mut headers = reqwest::header::HeaderMap::new();
-            if let Ok(value) = reqwest::header::HeaderValue::from_str(request.content_type()) {
-                headers.insert(reqwest::header::CONTENT_TYPE, value);
+            let mut headers = nanocode_http::header::HeaderMap::new();
+            if let Ok(value) = nanocode_http::header::HeaderValue::from_str(request.content_type())
+            {
+                headers.insert(nanocode_http::header::CONTENT_TYPE, value);
             }
             let (status, body) = self
                 .send(

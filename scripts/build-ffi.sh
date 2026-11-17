@@ -21,7 +21,7 @@ for platform in $platforms; do
   case "$platform" in
     macos) targets+=(aarch64-apple-darwin); [[ "${UNIVERSAL:-}" == 1 ]] && targets+=(x86_64-apple-darwin) ;;
     ios) targets+=(aarch64-apple-ios) ;;
-    ios-sim) targets+=(aarch64-apple-ios-sim); [[ "${UNIVERSAL:-}" == 1 ]] && targets+=(x86_64-apple-ios) ;;
+    ios-sim) targets+=(aarch64-apple-ios-sim) ;;
     *) echo "unknown platform $platform" >&2; exit 2 ;;
   esac
 done
@@ -34,7 +34,7 @@ for platform in $platforms; do
   libraries=()
   for target in "${targets[@]}"; do
     case "$platform:$target" in
-      macos:*-apple-darwin | ios:aarch64-apple-ios | ios-sim:*-apple-ios-sim | ios-sim:x86_64-apple-ios)
+      macos:*-apple-darwin | ios:aarch64-apple-ios | ios-sim:*-apple-ios-sim)
         libraries+=("target/$target/$directory/libnanocode_swift.a") ;;
     esac
   done

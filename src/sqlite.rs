@@ -9,6 +9,8 @@ const JOB_CAPACITY: usize = 1;
 
 const STATEMENT_CACHE: usize = 64;
 
+const POOL_STATE: &str = ":pool";
+
 type Rows = Result<Vec<Vec<SqlRow>>, StoreError>;
 
 struct Job {
@@ -103,22 +105,22 @@ impl SqliteSql {
 impl Sql for SqliteSql {
     fn transaction<'a>(
         &'a self,
-        _operation: &'static str,
+        operation: &'static str,
         statements: &'a [SqlStatement<'a>],
     ) -> StoreFuture<'a, Rows> {
         let reads = statements
             .iter()
             .all(|statement| statement.sql.starts_with("SELECT"));
-        self.send(reads, statements)
+        sessions_only(operation, self.send(reads, statements))
     }
 
     fn run<'a>(
         &'a self,
         access: SqlAccess,
-        _operation: &'static str,
+        operation: &'static str,
         statements: &'a [SqlStatement<'a>],
     ) -> StoreFuture<'a, Rows> {
-        self.send(access == SqlAccess::Read, statements)
+        sessions_only(operation, self.send(access == SqlAccess::Read, statements))
     }
 
     fn concurrent(self: std::sync::Arc<Self>) -> Option<std::sync::Arc<dyn Sql>> {
@@ -128,6 +130,26 @@ impl Sql for SqliteSql {
     fn readers(&self) -> usize {
         self.readers.len().max(1)
     }
+}
+
+fn sessions_only<'a>(
+    operation: &'static str,
+    sent: StoreFuture<'a, Rows>,
+) -> StoreFuture<'a, Rows> {
+    if operation != "list_states" {
+        return sent;
+    }
+    Box::pin(async move {
+        let mut results = sent.await?;
+        for rows in &mut results {
+            rows.retain(|row| {
+                !row.first()
+                    .and_then(Option::as_deref)
+                    .is_some_and(|id| id.ends_with(POOL_STATE))
+            });
+        }
+        Ok(results)
+    })
 }
 
 fn configure(connection: &Connection, options: SqliteOptions) -> Result<(), StoreError> {

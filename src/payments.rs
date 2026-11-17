@@ -489,8 +489,8 @@ impl Layer for Mpp {
                 return Err(layer::Error::new(WALLET_REQUIRED).unsent(true));
             };
             self.preconnect(generation, &wallet).await;
-            let mut paid = reqwest::Request::new(request.method, url);
-            *paid.headers_mut() = request.headers;
+            let mut paid = reqwest::Request::new(to_http_method(&request.method)?, url);
+            *paid.headers_mut() = to_http_headers(&request.headers);
             *paid.body_mut() = Some(request.body.into());
             let mut exchange = NextExchange {
                 next,
@@ -513,8 +513,10 @@ impl Layer for Mpp {
             let body = exchange
                 .body
                 .ok_or_else(|| layer::Error::new("the payment flow returned no response"))?;
+            let status = nanocode_http::StatusCode::from_u16(response.status().as_u16())
+                .map_err(|error| layer::Error::new(error.to_string()))?;
             Ok(
-                layer::Response::new(response.status(), response.headers().clone(), body)
+                layer::Response::new(status, from_http_headers(response.headers()), body)
                     .with_events(StreamPayments {
                         wallet,
                         client: self.client.clone(),
@@ -523,6 +525,41 @@ impl Layer for Mpp {
             )
         })
     }
+}
+
+fn to_http_method(method: &nanocode_http::Method) -> Result<http::Method, layer::Error> {
+    http::Method::from_bytes(method.as_str().as_bytes())
+        .map_err(|error| layer::Error::new(error.to_string()).unsent(true))
+}
+
+fn to_http_headers(headers: &nanocode_http::header::HeaderMap) -> http::HeaderMap {
+    let mut map = http::HeaderMap::with_capacity(headers.len());
+    for (name, value) in headers {
+        let (Ok(name), Ok(mut converted)) = (
+            http::HeaderName::from_bytes(name.as_str().as_bytes()),
+            http::HeaderValue::from_bytes(value.as_bytes()),
+        ) else {
+            continue;
+        };
+        converted.set_sensitive(value.is_sensitive());
+        map.append(name, converted);
+    }
+    map
+}
+
+fn from_http_headers(headers: &http::HeaderMap) -> nanocode_http::header::HeaderMap {
+    let mut map = nanocode_http::header::HeaderMap::with_capacity(headers.len());
+    for (name, value) in headers {
+        let (Ok(name), Ok(mut converted)) = (
+            nanocode_http::header::HeaderName::from_bytes(name.as_str().as_bytes()),
+            nanocode_http::header::HeaderValue::from_bytes(value.as_bytes()),
+        ) else {
+            continue;
+        };
+        converted.set_sensitive(value.is_sensitive());
+        map.append(name, converted);
+    }
+    map
 }
 
 pub fn explain(text: &str) -> String {
@@ -580,9 +617,10 @@ impl Exchange for NextExchange<'_> {
 
     async fn send(&mut self, request: reqwest::Request) -> Result<reqwest::Response, layer::Error> {
         let sent = layer::Request {
-            method: request.method().clone(),
+            method: nanocode_http::Method::from_bytes(request.method().as_str().as_bytes())
+                .map_err(|error| layer::Error::new(error.to_string()))?,
             url: request.url().to_string(),
-            headers: request.headers().clone(),
+            headers: from_http_headers(request.headers()),
             body: request
                 .body()
                 .and_then(reqwest::Body::as_bytes)
@@ -592,32 +630,32 @@ impl Exchange for NextExchange<'_> {
         let (status, headers, body, _) = self.next.send(sent).await?.into_parts();
         self.body = Some(body);
         let mut response = http::Response::builder()
-            .status(status)
+            .status(status.as_u16())
             .url(request.url().clone())
             .body(reqwest::Body::from(Vec::new()))
             .map_err(|error| layer::Error::new(error.to_string()))?;
-        *response.headers_mut() = headers;
+        *response.headers_mut() = to_http_headers(&headers);
         Ok(response.into())
     }
 }
 
 pub struct Transport<L> {
     layer: L,
-    client: reqwest::Client,
+    client: nanocode_http::Client,
 }
 
 impl<L: Layer> Transport<L> {
     pub fn new(layer: L) -> Self {
         Self {
             layer,
-            client: reqwest::Client::new(),
+            client: nanocode_http::Client::new(),
         }
     }
 }
 
 struct Layered<'a, L> {
     layer: &'a L,
-    client: &'a reqwest::Client,
+    client: &'a nanocode_http::Client,
 }
 
 impl<L: Layer> layer::Sender for Layered<'_, L> {
@@ -626,7 +664,7 @@ impl<L: Layer> layer::Sender for Layered<'_, L> {
         request: layer::Request,
     ) -> BoxFuture<'_, Result<layer::Response, layer::Error>> {
         Box::pin(async move {
-            let sender = nanocode_http::ReqwestSender::new(self.client);
+            let sender = nanocode_http::ClientSender::new(self.client);
             self.layer.send(request, Next::new(&sender)).await
         })
     }
@@ -659,12 +697,12 @@ impl<L: Layer> HostTransport for Transport<L> {
     }
 
     fn sleep<'a>(&'a self, _session_id: &'a str, duration: Duration) -> HostFuture<'a, ()> {
-        Box::pin(tokio::time::sleep(duration))
+        Box::pin(nanocode::platform::sleep(duration))
     }
 }
 
 #[derive(Clone)]
-pub struct Headers(pub http::HeaderMap);
+pub struct Headers(pub nanocode_http::header::HeaderMap);
 
 impl Layer for Headers {
     fn send<'a>(

@@ -352,7 +352,7 @@ pub async fn codex_client(
 ) -> Result<OpenAi, String> {
     let builder = match &config.auth {
         Auth::ApiKey(key) => {
-            let client = reqwest::Client::builder()
+            let client = nanocode_http::Client::builder()
                 .connect_timeout(CONNECT_TIMEOUT)
                 .read_timeout(IDLE_TIMEOUT)
                 .build()
@@ -415,11 +415,11 @@ pub fn codex_web_search(
             crate::payments::Headers(header_map(headers)?),
         )),
         Auth::ApiKey(key) => {
-            let mut headers = http::HeaderMap::new();
-            let mut value = http::HeaderValue::from_str(&format!("Bearer {key}"))
+            let mut headers = nanocode_http::header::HeaderMap::new();
+            let mut value = nanocode_http::header::HeaderValue::from_str(&format!("Bearer {key}"))
                 .map_err(|error| error.to_string())?;
             value.set_sensitive(true);
-            headers.insert(http::header::AUTHORIZATION, value);
+            headers.insert(nanocode_http::header::AUTHORIZATION, value);
             Arc::new(crate::payments::Transport::new(crate::payments::Headers(
                 headers,
             )))
@@ -439,12 +439,15 @@ fn messages_url(base: &str) -> String {
     }
 }
 
-fn header_map(headers: &BTreeMap<String, String>) -> Result<http::HeaderMap, String> {
-    let mut map = http::HeaderMap::new();
+fn header_map(
+    headers: &BTreeMap<String, String>,
+) -> Result<nanocode_http::header::HeaderMap, String> {
+    let mut map = nanocode_http::header::HeaderMap::new();
     for (name, value) in headers {
-        let name =
-            http::HeaderName::from_bytes(name.as_bytes()).map_err(|error| error.to_string())?;
-        let mut value = http::HeaderValue::from_str(value).map_err(|error| error.to_string())?;
+        let name = nanocode_http::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let mut value = nanocode_http::header::HeaderValue::from_str(value)
+            .map_err(|error| error.to_string())?;
         value.set_sensitive(true);
         map.insert(name, value);
     }

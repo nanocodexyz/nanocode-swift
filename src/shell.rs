@@ -1420,6 +1420,7 @@ impl ShellExecutor for Simulated {
                         session_id: None,
                         original_token_count: Some(original),
                         output,
+                        time_left_seconds: None,
                     }
                 }
                 Err(error) => ExecCommandResult::failed(started.elapsed(), error),
