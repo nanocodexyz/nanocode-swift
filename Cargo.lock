@@ -3394,6 +3394,8 @@ name = "nanocode"
 version = "0.7.0"
 dependencies = [
  "nanocode-agent",
+ "nanocode-agent-config",
+ "nanocode-agent-core",
  "nanocode-agent-host",
  "nanocode-backend-claude",
  "nanocode-backend-codex",
@@ -3557,7 +3559,6 @@ version = "0.7.0"
 dependencies = [
  "nanocode-home",
  "nanocode-image",
- "nanocode-jpeg",
  "nanocode-platform",
  "nanocode-sync",
  "nanocode-sys",
