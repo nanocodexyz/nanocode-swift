@@ -29,6 +29,8 @@ The demo app runs the same agent in one of three places (Settings, or View ▸ R
 - **Cloudflare.** The agent runs in the [Cloudflare demo](https://nanocode.xyz/cloudflare)'s Durable Object. The app is a native client of it, so the turn keeps going while the phone sleeps or the app is closed, and the app catches up from its event cursor when it comes back. The app can also attach this device as the cloud agent's hand, so the agent's Code Mode cells and device tools (`device_info`, `open_url`, `clipboard`, `speak`) run on the phone or Mac.
 - **Vercel.** The same, with the agent in the [Vercel demo](https://nanocode.xyz/vercel)'s Workflow.
 
+Images the agent shows, such as a matplotlib chart, draw under the cell that made them wherever it runs: `RemoteSession` fetches the `nanocode-blob:` sources Cloudflare keeps a tool's images under (with the session's headers, cached by their BLAKE3 key) and the workspace files a cell names from either deployment, and a session on this device reads its own workspace through `WorkspaceImages`. A turn the deployment refuses after its stream opened, such as a model it does not serve or a spent visitor budget, ends with the deployment's error instead of waiting for events that never come.
+
 <table>
   <tr>
     <td><img src="assets/demo-cloudflare.gif" alt="Claude-style demo with the agent in the Cloudflare Durable Object: Claude Haiku 5.5 calls device_info on this Mac, attached as the session's hand" width="100%"></td>
@@ -53,11 +55,11 @@ await chat.send("What device am I on?")
 | --- | --- |
 | `Nanocode` | The runtime over the Rust library: `NanocodeRuntime`, `Session`, `Chat`, `Wallet` and `WalletMonitor`, hands, runners and the model catalog, and `RemoteSession` for agents that run on a Cloudflare or Vercel deployment. |
 | `NanocodeKit` | Native AppKit (macOS) and UIKit (iOS) UI from one source: `CloneViewController` with the ChatGPT and Claude skins of nanocode-ts's clone apps, and `NanocodeChatViewController` for a conversation in your own window. |
-| `NanocodeCore` | Plain Swift, no Rust: events, the paced `Transcript`, tool cells, turns, the markdown parser and syntax highlighter, for apps that render nanocode events they receive some other way. |
+| `NanocodeCore` | Plain Swift, no Rust: events, the paced `Transcript`, tool cells and the images they carry (`ImageSource`, fetched through the host's `ImageResolver`), turns, the markdown parser and syntax highlighter, for apps that render nanocode events they receive some other way. |
 | `NanocodeViews` | SwiftUI views over `NanocodeCore`, for SwiftUI hosts. |
 | `NanocodeComputer` | macOS computer use over Accessibility and ScreenCaptureKit, served as an MCP server on stdio from inside your app, so the app's own permissions cover it. No Rust. |
 
-`Package.swift` downloads the prebuilt `NanocodeFFI` XCFramework that `ffi-release.json` names, so depending on the package builds no Rust. An app that uses only `NanocodeCore`, `NanocodeViews` or `NanocodeComputer` sets `NANOCODE_WITHOUT_FFI=1` where it resolves packages, and SwiftPM leaves the XCFramework out instead of downloading it.
+`Package.swift` downloads the prebuilt `NanocodeFFI` XCFramework that `ffi-release.json` names (78 MB zipped for ffi-91b6c1c23802a8dbbfe1, with macOS for arm64 and x86_64, iOS, and the iOS simulator for arm64 only: the SDK does not build for the Intel simulator), so depending on the package builds no Rust. An app that uses only `NanocodeCore`, `NanocodeViews` or `NanocodeComputer` sets `NANOCODE_WITHOUT_FFI=1` where it resolves packages, and SwiftPM leaves the XCFramework out instead of downloading it.
 
 ## Quickstart
 
@@ -78,11 +80,13 @@ With no API key configured, sessions pay through the connected Tempo Wallet (`Wa
 
 - `Examples/Demo` is the nanocode.xyz demo: an AppKit app for macOS and a UIKit app for iOS, in the ChatGPT or Claude style, with conversations from the store, the model menu, a Tempo Wallet, device tools (`device_info`, `open_url`, `clipboard`, `speak`, and with the user's permission photos, contacts, calendar, reminders, location, notifications, the microphone, Bluetooth, messages and email drafts, Shortcuts, and on iOS the camera, motion and music), a workspace folder chosen from Finder or the Files app, a computer attached through the relay and this device as a hand. Run `xcodegen generate` in it and open `NanocodeDemo.xcodeproj`.
 - `Examples/Demo/AppKit` and `Examples/Demo/UIKit` are the smallest hosts: an `NSWindow` and a `UINavigationController` around `NanocodeChatViewController`.
-- `Examples/Console` is a terminal client: `Console remote cloudflare|vercel [prompts…]` chats with a deployment and reopens the conversation from its journal, `Console remote-resume [id]` follows a turn a killed process left running, and `Console hand <url> <token>` makes the process a hand.
+- `Examples/Console` is a terminal client: `Console remote cloudflare|vercel [prompts…]` chats with a deployment and reopens the conversation from its journal, `Console remote-resume [id]` follows a turn a killed process left running and saves the images it shows, `Console bash <script>` runs a script in the simulated shell, and `Console hand <url> <token>` makes the process a hand.
 
 ## Building the library
 
-`scripts/build-ffi.sh` builds the Rust crate in `src/` against the SDK at `sdk-revision.json` (a checkout of [nanocodex](https://github.com/nanocodexyz/nanocode) beside this one) and writes `build/NanocodeFFI.xcframework`, which the package then uses instead of the release.
+`scripts/build-ffi.sh` builds the Rust crate in `src/` against the SDK at `sdk-revision.json` (nanocode c471ca8d5, from a checkout of [nanocodex](https://github.com/nanocodexyz/nanocode) beside this one) and writes `build/NanocodeFFI.xcframework`, which the package then uses instead of the release. `scripts/build-shell.sh` bundles nanocode-ts's simulated bash and its Python front end into the package's resources from the revision in `ts-revision.json`.
+
+CI (`.github/workflows/ci.yml`) runs on every push: it builds the package with the release and without the FFI, the Console, C and Python examples, and the demo for macOS and the iOS simulator, and runs `cargo check` on the crate against the SDK revision.
 
 ## License
 
