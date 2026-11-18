@@ -2659,7 +2659,7 @@ var NanocodeBash = (function(exports) {
 					out += escapeRegExp(c);
 					continue;
 				}
-				const body = alternatives(pattern.slice(i + 2, end)).map((part) => globSource(part, path, true)).join("|");
+				const body = alternatives$1(pattern.slice(i + 2, end)).map((part) => globSource(part, path, true)).join("|");
 				const any = path ? "[^/]*" : "[\\s\\S]*";
 				const rest = globSource(pattern.slice(end + 1), path, true);
 				if (c === "!") out += "(?:(?!(?:" + body + ")" + rest + "$)" + any + ")";
@@ -2684,7 +2684,7 @@ var NanocodeBash = (function(exports) {
 		else if (pattern[i] === ")" && --depth === 0) return i;
 		return -1;
 	}
-	function alternatives(body) {
+	function alternatives$1(body) {
 		const parts = [];
 		let depth = 0;
 		let start = 0;
@@ -31882,7 +31882,7 @@ zstd: *.zst, *.zstd
 		}
 		return status;
 	};
-	async function gather(ctx, operand, recurse, junk, out, excluded) {
+	async function gather$1(ctx, operand, recurse, junk, out, excluded) {
 		const path = ctx.resolve(operand);
 		const stat = await ctx.fs.stat(path);
 		if (!stat) return false;
@@ -31903,7 +31903,7 @@ zstd: *.zst, *.zstd
 			mode: stat.mode
 		});
 		if (!recurse) return true;
-		for (const child of await ctx.fs.list(path)) await gather(ctx, (operand.replace(/\/+$/, "") || "/") + "/" + child, recurse, junk, out, excluded);
+		for (const child of await ctx.fs.list(path)) await gather$1(ctx, (operand.replace(/\/+$/, "") || "/") + "/" + child, recurse, junk, out, excluded);
 		return true;
 	}
 	const zip = async (ctx) => {
@@ -31983,7 +31983,7 @@ zstd: *.zst, *.zstd
 			let missing = 0;
 			for (const operand of operands) {
 				if (operand === "-@") continue;
-				if (!await gather(ctx, operand, flags.has("r"), flags.has("j"), added, excluded)) {
+				if (!await gather$1(ctx, operand, flags.has("r"), flags.has("j"), added, excluded)) {
 					ctx.stderr.write("	zip warning: name not matched: " + operand + "\n");
 					missing++;
 				}
@@ -32092,11 +32092,486 @@ zstd: *.zst, *.zstd
 		matplotlib: "matplotlib",
 		msgpack: "msgpack",
 		numpy: "numpy",
+		pandas: "pandas",
 		pillow: "PIL",
 		pyyaml: "yaml",
 		regex: "regex",
 		ujson: "ujson"
 	});
+	const alternatives = {
+		cryptography: "hashlib, hmac and secrets for hashes, MACs and keys; pip install pyaes or rsa for pure-Python ciphers",
+		lxml: "BeautifulSoup(text, 'html.parser') from beautifulsoup4, or xml.etree.ElementTree",
+		orjson: "json, ujson (built in) or pip install simplejson",
+		polars: "pandas (built in)",
+		pyarrow: "pandas (built in) with CSV or JSON files",
+		"scikit-learn": "numpy (built in) for the linear algebra, such as numpy.linalg.lstsq",
+		scipy: "numpy (built in): numpy.linalg, numpy.fft, numpy.polynomial and numpy.random; pip install sympy or mpmath for symbolic and special functions",
+		statsmodels: "numpy and pandas (built in), such as numpy.linalg.lstsq for a regression"
+	};
+	const carriedDists = {
+		contourpy: [
+			"contourpy",
+			"contourpy",
+			"1.4.0"
+		],
+		cycler: [
+			"cycler",
+			"cycler",
+			"0.12.1"
+		],
+		fonttools: [
+			"fonttools",
+			"fontTools",
+			"4.68.0"
+		],
+		kiwisolver: [
+			"kiwisolver",
+			"kiwisolver",
+			"1.5.1"
+		],
+		markupsafe: [
+			"MarkupSafe",
+			"markupsafe",
+			"3.0.4"
+		],
+		matplotlib: [
+			"matplotlib",
+			"matplotlib",
+			"3.11.2"
+		],
+		msgpack: [
+			"msgpack",
+			"msgpack",
+			"1.2.4"
+		],
+		numpy: [
+			"numpy",
+			"numpy",
+			"2.5.5"
+		],
+		packaging: [
+			"packaging",
+			"packaging",
+			"26.3"
+		],
+		pandas: [
+			"pandas",
+			"pandas",
+			"3.1.1"
+		],
+		pillow: [
+			"pillow",
+			"PIL",
+			"13.0.0"
+		],
+		pyparsing: [
+			"pyparsing",
+			"pyparsing",
+			"3.3.3"
+		],
+		pysha3: [
+			"pysha3",
+			"sha3",
+			"1.0.2"
+		],
+		"python-dateutil": [
+			"python-dateutil",
+			"dateutil",
+			"4.0.0"
+		],
+		pyyaml: [
+			"PyYAML",
+			"yaml",
+			"6.0.3"
+		],
+		regex: [
+			"regex",
+			"regex",
+			"2026.11.9"
+		],
+		six: [
+			"six",
+			"six",
+			"1.17.0"
+		],
+		ujson: [
+			"ujson",
+			"ujson",
+			"6.1.0"
+		]
+	};
+	const optionalCompiled = /* @__PURE__ */ new Set([
+		"aiohttp",
+		"charset-normalizer",
+		"frozenlist",
+		"multidict",
+		"propcache",
+		"pyrsistent",
+		"simplejson",
+		"sqlalchemy",
+		"tornado",
+		"wrapt",
+		"yarl",
+		"websockets",
+		"greenlet",
+		"coverage",
+		"pyzmq",
+		"markdown-it-py",
+		"rapidfuzz",
+		"immutables",
+		"ruamel-yaml-clib",
+		"zope-interface",
+		"msgspec",
+		"cytoolz",
+		"bitarray",
+		"pycryptodome"
+	]);
+	const downgrades = { pydantic: ["<2", "pydantic 2 needs the compiled pydantic-core, which nanocode's Python does not carry, so pip installed pydantic 1.x (the v1 API)"] };
+	const orjsonShim = String.raw`import json as _json
+import datetime as _dt
+import enum as _enum
+import uuid as _uuid
+import dataclasses as _dc
+
+__version__ = '3.11.0'
+OPT_INDENT_2 = 1
+OPT_NAIVE_UTC = 2
+OPT_NON_STR_KEYS = 4
+OPT_OMIT_MICROSECONDS = 8
+OPT_SERIALIZE_NUMPY = 16
+OPT_SORT_KEYS = 32
+OPT_STRICT_INTEGER = 64
+OPT_UTC_Z = 128
+OPT_PASSTHROUGH_SUBCLASS = 256
+OPT_PASSTHROUGH_DATETIME = 512
+OPT_APPEND_NEWLINE = 1024
+OPT_PASSTHROUGH_DATACLASS = 2048
+OPT_SERIALIZE_DATACLASS = 0
+OPT_SERIALIZE_UUID = 0
+
+
+class JSONDecodeError(_json.JSONDecodeError):
+    pass
+
+
+class JSONEncodeError(TypeError):
+    pass
+
+
+class Fragment:
+    def __init__(self, contents):
+        self.contents = contents
+
+
+def _time(value, option):
+    if option & OPT_OMIT_MICROSECONDS and isinstance(value, (_dt.datetime, _dt.time)):
+        value = value.replace(microsecond=0)
+    if option & OPT_NAIVE_UTC and isinstance(value, _dt.datetime) and value.tzinfo is None:
+        value = value.replace(tzinfo=_dt.timezone.utc)
+    text = value.isoformat()
+    if option & OPT_UTC_Z and text.endswith('+00:00'):
+        text = text[:-6] + 'Z'
+    return text
+
+
+def _keys(value):
+    if isinstance(value, dict):
+        return {(k if isinstance(k, str) else _time(k, 0) if isinstance(k, (_dt.date, _dt.time)) else str(k)): _keys(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_keys(v) for v in value]
+    return value
+
+
+def dumps(obj, default=None, option=None):
+    option = option or 0
+
+    def encode(value):
+        if isinstance(value, (_dt.datetime, _dt.date, _dt.time)):
+            return _time(value, option)
+        if isinstance(value, _uuid.UUID):
+            return str(value)
+        if isinstance(value, _enum.Enum):
+            return value.value
+        if isinstance(value, Fragment):
+            return _json.loads(value.contents)
+        if _dc.is_dataclass(value) and not isinstance(value, type):
+            return _dc.asdict(value)
+        if hasattr(value, 'tolist'):
+            return value.tolist()
+        if default is not None:
+            return default(value)
+        raise JSONEncodeError('Type is not JSON serializable: ' + type(value).__name__)
+
+    if option & OPT_NON_STR_KEYS:
+        obj = _keys(obj)
+    try:
+        text = _json.dumps(
+            obj,
+            default=encode,
+            ensure_ascii=False,
+            indent=2 if option & OPT_INDENT_2 else None,
+            separators=(',', ': ') if option & OPT_INDENT_2 else (',', ':'),
+            sort_keys=bool(option & OPT_SORT_KEYS),
+        )
+    except (TypeError, ValueError) as error:
+        raise JSONEncodeError(str(error)) from None
+    text = text.replace('NaN', 'null').replace('-Infinity', 'null').replace('Infinity', 'null') if 'N' in text or 'I' in text else text
+    if option & OPT_APPEND_NEWLINE:
+        text += '\n'
+    return text.encode('utf-8')
+
+
+def loads(obj):
+    if isinstance(obj, (bytes, bytearray, memoryview)):
+        obj = bytes(obj).decode('utf-8')
+    try:
+        return _json.loads(obj)
+    except _json.JSONDecodeError as error:
+        raise JSONDecodeError(error.msg, error.doc, error.pos) from None
+`;
+	const rpdsShim = String.raw`__version__ = '0.30.0'
+__all__ = ['HashTrieMap', 'HashTrieSet', 'List', 'Queue']
+
+
+class HashTrieMap:
+    __slots__ = ('_d',)
+
+    def __init__(self, value=None, **kwargs):
+        d = dict(value._d if isinstance(value, HashTrieMap) else value or {})
+        d.update(kwargs)
+        self._d = d
+
+    @classmethod
+    def convert(cls, value):
+        return value if isinstance(value, cls) else cls(value)
+
+    @classmethod
+    def fromkeys(cls, keys, value=None):
+        return cls(dict.fromkeys(keys, value))
+
+    def insert(self, key, value):
+        d = dict(self._d)
+        d[key] = value
+        return HashTrieMap(d)
+
+    def remove(self, key):
+        if key not in self._d:
+            raise KeyError(key)
+        return self.discard(key)
+
+    def discard(self, key):
+        d = dict(self._d)
+        d.pop(key, None)
+        return HashTrieMap(d)
+
+    def update(self, *maps, **kwargs):
+        d = dict(self._d)
+        for m in maps:
+            d.update(m._d if isinstance(m, HashTrieMap) else m)
+        d.update(kwargs)
+        return HashTrieMap(d)
+
+    def get(self, key, default=None):
+        return self._d.get(key, default)
+
+    def keys(self):
+        return self._d.keys()
+
+    def values(self):
+        return self._d.values()
+
+    def items(self):
+        return self._d.items()
+
+    def __getitem__(self, key):
+        return self._d[key]
+
+    def __contains__(self, key):
+        return key in self._d
+
+    def __iter__(self):
+        return iter(self._d)
+
+    def __len__(self):
+        return len(self._d)
+
+    def __eq__(self, other):
+        if isinstance(other, HashTrieMap):
+            return self._d == other._d
+        if isinstance(other, dict):
+            return self._d == other
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(frozenset(self._d.items()))
+
+    def __repr__(self):
+        return 'HashTrieMap(' + repr(self._d) + ')'
+
+    def __reduce__(self):
+        return (HashTrieMap, (self._d,))
+
+
+class HashTrieSet:
+    __slots__ = ('_s',)
+
+    def __init__(self, value=()):
+        self._s = frozenset(value._s if isinstance(value, HashTrieSet) else value)
+
+    @classmethod
+    def convert(cls, value):
+        return value if isinstance(value, cls) else cls(value)
+
+    def insert(self, value):
+        return HashTrieSet(self._s | {value})
+
+    def discard(self, value):
+        return HashTrieSet(self._s - {value})
+
+    def remove(self, value):
+        if value not in self._s:
+            raise KeyError(value)
+        return self.discard(value)
+
+    def update(self, *iterables):
+        s = set(self._s)
+        for it in iterables:
+            s.update(it)
+        return HashTrieSet(s)
+
+    def union(self, other):
+        return HashTrieSet(self._s | frozenset(other))
+
+    def intersection(self, other):
+        return HashTrieSet(self._s & frozenset(other))
+
+    def difference(self, other):
+        return HashTrieSet(self._s - frozenset(other))
+
+    def symmetric_difference(self, other):
+        return HashTrieSet(self._s ^ frozenset(other))
+
+    __or__ = union
+    __and__ = intersection
+    __sub__ = difference
+    __xor__ = symmetric_difference
+
+    def __contains__(self, value):
+        return value in self._s
+
+    def __iter__(self):
+        return iter(self._s)
+
+    def __len__(self):
+        return len(self._s)
+
+    def __eq__(self, other):
+        if isinstance(other, HashTrieSet):
+            return self._s == other._s
+        if isinstance(other, (set, frozenset)):
+            return self._s == other
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(self._s)
+
+    def __repr__(self):
+        return 'HashTrieSet({' + ', '.join(map(repr, self._s)) + '})'
+
+
+class List:
+    __slots__ = ('_t',)
+
+    def __init__(self, *values):
+        if len(values) == 1 and not isinstance(values[0], (str, bytes)) and hasattr(values[0], '__iter__'):
+            values = values[0]
+        self._t = tuple(values)
+
+    @property
+    def first(self):
+        if not self._t:
+            raise IndexError('empty list has no first element')
+        return self._t[0]
+
+    @property
+    def rest(self):
+        return List(self._t[1:])
+
+    def push_front(self, value):
+        return List((value,) + self._t)
+
+    def drop_first(self):
+        if not self._t:
+            raise IndexError('empty list has no first element')
+        return List(self._t[1:])
+
+    def __iter__(self):
+        return iter(self._t)
+
+    def __reversed__(self):
+        return List(self._t[::-1])
+
+    def __len__(self):
+        return len(self._t)
+
+    def __eq__(self, other):
+        return isinstance(other, List) and self._t == other._t
+
+    def __hash__(self):
+        return hash(self._t)
+
+    def __repr__(self):
+        return 'List([' + ', '.join(map(repr, self._t)) + '])'
+
+
+class Queue:
+    __slots__ = ('_t',)
+
+    def __init__(self, *values):
+        if len(values) == 1 and hasattr(values[0], '__iter__'):
+            values = values[0]
+        self._t = tuple(values)
+
+    def enqueue(self, value):
+        return Queue(self._t + (value,))
+
+    def dequeue(self):
+        if not self._t:
+            raise IndexError('dequeued an empty queue')
+        return Queue(self._t[1:])
+
+    @property
+    def peek(self):
+        if not self._t:
+            raise IndexError('peeked at an empty queue')
+        return self._t[0]
+
+    @property
+    def is_empty(self):
+        return not self._t
+
+    def __iter__(self):
+        return iter(self._t)
+
+    def __len__(self):
+        return len(self._t)
+
+    def __eq__(self, other):
+        return isinstance(other, Queue) and self._t == other._t
+
+    def __repr__(self):
+        return 'Queue([' + ', '.join(map(repr, self._t)) + '])'
+`;
+	const shims = {
+		orjson: {
+			files: { "orjson/__init__.py": orjsonShim },
+			note: "a pure-Python orjson over the json module (same dumps/loads API, slower)"
+		},
+		"rpds-py": {
+			files: { "rpds/__init__.py": rpdsShim },
+			note: "a pure-Python rpds (HashTrieMap, HashTrieSet, List, Queue over dict, frozenset and tuple)"
+		}
+	};
 	const environment = {
 		implementation_name: "rustpython",
 		implementation_version: "3.14.0",
@@ -32356,42 +32831,348 @@ zstd: *.zst, *.zstd
 	function binary(name) {
 		return /\.(so|pyd|dylib)(\.[\w.]+)?$/.test(name);
 	}
+	const carriedCache = /* @__PURE__ */ new WeakMap();
 	async function carried(ctx) {
-		const ran = await ctx.exec("python3 -c 'import sys, _imp; print(*sys.builtin_module_names); print(*_imp._frozen_module_names())'");
-		const [builtin, frozen] = ran.stdout.split("\n");
-		if (ran.status !== 0 || frozen === void 0) throw new CommandError("could not list python3's built-in modules", 1);
+		const names = Object.values(carriedDists).map(([, module]) => module);
+		const ran = await ctx.exec("python3 -c 'import sys, _imp, importlib.util as u\nprint(*sys.builtin_module_names)\nprint(*_imp._frozen_module_names())\nfor n in sys.argv[1:]:\n    s = u.find_spec(n)\n    print(n if s is not None and s.origin in (\"frozen\", \"built-in\") else \"\", end=\" \")\nprint()' " + names.join(" "));
+		const [builtin, frozen, found] = ran.stdout.split("\n");
+		if (ran.status !== 0 || found === void 0) throw new CommandError("could not list python3's built-in modules", 1);
+		const present = new Set(found.trim().split(/\s+/));
 		return {
 			builtin: new Set(builtin.trim().split(/\s+/)),
-			frozen: new Set(frozen.trim().split(/\s+/))
+			frozen: new Set(frozen.trim().split(/\s+/)),
+			dists: new Map(Object.entries(carriedDists).filter(([, [, module]]) => present.has(module)))
+		};
+	}
+	async function carriedOnce(ctx) {
+		const known = carriedCache.get(ctx.fs);
+		if (known) return known;
+		const found = await carried(ctx);
+		carriedCache.set(ctx.fs, found);
+		return found;
+	}
+	const downloads = /* @__PURE__ */ new Map();
+	let downloadBytes = 0;
+	const projects = /* @__PURE__ */ new Map();
+	async function download(ctx, url) {
+		const cached = downloads.get(url);
+		if (cached) return cached;
+		const response = await ctx.fetch(url, { signal: ctx.signal });
+		if (!response.ok) throw new CommandError("could not download " + url + ": HTTP " + response.status, 1);
+		const data = new Uint8Array(await response.arrayBuffer());
+		if (data.length <= 16777216) {
+			while (downloadBytes + data.length > 67108864 && downloads.size) {
+				const [first, bytes] = downloads.entries().next().value;
+				downloads.delete(first);
+				downloadBytes -= bytes.length;
+			}
+			downloads.set(url, data);
+			downloadBytes += data.length;
+		}
+		return data;
+	}
+	async function project(ctx, key, requirement) {
+		const cached = projects.get(key);
+		if (cached) return cached;
+		const response = await ctx.fetch(index + encodeURIComponent(key) + "/json", { signal: ctx.signal });
+		if (response.status === 404) throw new CommandError("No matching distribution found for " + requirement.name + " (not on PyPI)", 1);
+		if (!response.ok) throw new CommandError("could not read " + index + key + "/json: HTTP " + response.status, 1);
+		const read = await response.json();
+		const slim = {
+			info: { name: read.info.name },
+			releases: {}
+		};
+		for (const [version, files] of Object.entries(read.releases)) slim.releases[version] = files.map((file) => ({
+			filename: file.filename,
+			url: file.url,
+			size: file.size,
+			yanked: file.yanked,
+			packagetype: file.packagetype,
+			requires_python: file.requires_python
+		}));
+		if (projects.size >= 200) projects.delete(projects.keys().next().value);
+		projects.set(key, slim);
+		return slim;
+	}
+	function metadataText(name, version, requires, summary = "") {
+		return "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n" + (summary ? "Summary: " + summary + "\n" : "") + requires.map((text) => "Requires-Dist: " + text + "\n").join("") + "\n";
+	}
+	function distName(name) {
+		return name.replace(/[-_.]+/g, "_");
+	}
+	async function fromWheel(data, filename, modules, key, force) {
+		const { entries } = readEntries(data);
+		const absent = entries.filter((entry) => binary(entry.name) && !/^[^/]+\.libs\//.test(entry.name)).map((entry) => compiledModule(entry.name) ?? entry.name).filter((name) => !modules.builtin.has(name));
+		if (absent.length && !force && !optionalCompiled.has(key) && !absent.every(speedup)) throw new Compiled(filename, absent);
+		const info = entries.find((entry) => /^[^/]+\.dist-info\/METADATA$/.test(entry.name));
+		if (!info) throw new CommandError(filename + " has no .dist-info/METADATA", 1);
+		const files = /* @__PURE__ */ new Map();
+		const skipped = [];
+		for (const entry of entries) {
+			if (entry.directory || unsafe(entry.name) || binary(entry.name)) continue;
+			if (entry.name.endsWith(".dist-info/RECORD")) continue;
+			const scheme = /^[^/]+\.data\/([^/]+)\/(.+)$/.exec(entry.name);
+			if (scheme && scheme[1] !== "purelib" && scheme[1] !== "platlib") {
+				skipped.push(entry.name);
+				continue;
+			}
+			files.set(scheme ? scheme[2] : entry.name, await contents(data, entry));
+		}
+		return {
+			files,
+			metadata: decode(files.get(info.name)),
+			distInfo: info.name.slice(0, info.name.indexOf("/")),
+			skipped,
+			note: absent.length ? "left out compiled modules " + absent.join(", ") + " (python.wasm runs their pure-Python fallback)" : void 0
+		};
+	}
+	function speedup(name) {
+		return /(^|[._])(speedups?|_?cext|cextension|cyextension|_c|_cy|_accel|_native)(\.|$)|speedups/i.test(name);
+	}
+	var Compiled = class extends Error {
+		modules;
+		constructor(filename, modules) {
+			super(filename);
+			this.modules = modules;
+		}
+	};
+	const sourceExtensions = /\.(c|cc|cpp|cxx|h|hpp|pyx|pxd|rs|f|f90|go|zig)$/i;
+	function dependenciesFrom(files) {
+		const pyproject = files.get("pyproject.toml");
+		if (pyproject) {
+			const block = /^\s*\[project\]([\s\S]*?)(?=^\s*\[|$(?![\s\S]))/m.exec(pyproject)?.[1] ?? "";
+			const deps = /^\s*dependencies\s*=\s*\[([\s\S]*?)\]/m.exec(block)?.[1];
+			if (deps) return [...deps.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+			const poetry = /^\s*\[tool\.poetry\.dependencies\]([\s\S]*?)(?=^\s*\[|$(?![\s\S]))/m.exec(pyproject)?.[1];
+			if (poetry) return [...poetry.matchAll(/^\s*([A-Za-z0-9][\w.-]*)\s*=/gm)].map((match) => match[1]).filter((name) => name.toLowerCase() !== "python");
+		}
+		for (const name of ["setup.cfg", "setup.py"]) {
+			const text = files.get(name);
+			if (!text) continue;
+			const cfg = /install_requires\s*=\s*\n((?:[ \t]+\S.*\n?)+)/.exec(text)?.[1];
+			if (cfg) return cfg.split("\n").map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+			const list = /install_requires\s*=\s*\[([\s\S]*?)\]/.exec(text)?.[1];
+			if (list) return [...list.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+		}
+		return [];
+	}
+	function sourceUnit(all, fallbackName, fallbackVersion) {
+		const text = (path) => {
+			const data = all.get(path);
+			return data ? decode(data) : void 0;
+		};
+		const top = /* @__PURE__ */ new Map();
+		for (const name of [
+			"pyproject.toml",
+			"setup.cfg",
+			"setup.py",
+			"PKG-INFO"
+		]) {
+			const value = text(name);
+			if (value !== void 0) top.set(name, value);
+		}
+		const pkgInfo = top.get("PKG-INFO");
+		const pyproject = top.get("pyproject.toml") ?? "";
+		const name = pkgInfo && fields(pkgInfo, "Name")[0] || /^\s*name\s*=\s*["']([^"']+)["']/m.exec(pyproject)?.[1] || /name\s*=\s*["']([^"']+)["']/.exec(top.get("setup.py") ?? top.get("setup.cfg") ?? "")?.[1] || fallbackName;
+		const version = pkgInfo && fields(pkgInfo, "Version")[0] || /^\s*version\s*=\s*["']([^"']+)["']/m.exec(pyproject)?.[1] || fallbackVersion;
+		const requires = pkgInfo && fields(pkgInfo, "Requires-Dist").length ? fields(pkgInfo, "Requires-Dist") : dependenciesFrom(top);
+		const paths = [...all.keys()];
+		const native = paths.filter((path) => sourceExtensions.test(path) && !/(^|\/)(tests?|docs?|examples?|benchmarks?|bench)\//.test(path));
+		const roots = /* @__PURE__ */ new Set();
+		const base = paths.some((path) => /^src\/[^/]+\/__init__\.py$/.test(path) || /^src\/[^/]+\.py$/.test(path)) ? "src/" : "";
+		for (const path of paths) {
+			if (!path.startsWith(base)) continue;
+			const rest = path.slice(base.length);
+			const pkg = /^([A-Za-z_]\w*)\/__init__\.py$/.exec(rest);
+			if (pkg && !/^(tests?|docs?|examples?|benchmarks?|build|dist|scripts|tools)$/.test(pkg[1])) roots.add(pkg[1] + "/");
+			const mod = /^([A-Za-z_]\w*)\.py$/.exec(rest);
+			if (mod && !/^(setup|conftest|noxfile|tasks|fabfile|test_.*|.*_test)$/.test(mod[1])) roots.add(mod[1] + ".py");
+		}
+		if (!roots.size) {
+			const dirName = distName(name).toLowerCase();
+			for (const path of paths) {
+				const rest = path.slice(base.length);
+				if (path.startsWith(base) && rest.toLowerCase().startsWith(dirName + "/") && rest.endsWith(".py")) roots.add(rest.slice(0, rest.indexOf("/") + 1));
+			}
+		}
+		if (!roots.size) throw new CommandError("cannot find a Python package to install in the source of " + name + " " + version, 1);
+		const files = /* @__PURE__ */ new Map();
+		for (const [path, data] of all) {
+			if (!path.startsWith(base)) continue;
+			const rest = path.slice(base.length);
+			if ([...roots].some((root) => root.endsWith("/") ? rest.startsWith(root) : rest === root) && !sourceExtensions.test(rest)) files.set(rest, data);
+		}
+		const distInfo = distName(name) + "-" + version + ".dist-info";
+		files.set(distInfo + "/METADATA", encode(metadataText(name, version, requires)));
+		return {
+			files,
+			metadata: metadataText(name, version, requires),
+			distInfo,
+			skipped: [],
+			note: native.length ? "built from source without its compiled parts (" + native.slice(0, 3).join(", ") + (native.length > 3 ? ", ..." : "") + "); they work only if the package has a pure-Python fallback" : void 0
+		};
+	}
+	async function fromSdist(data, filename, fallbackName, fallbackVersion) {
+		const all = /* @__PURE__ */ new Map();
+		if (/\.zip$/i.test(filename)) {
+			const { entries } = readEntries(data);
+			for (const entry of entries) if (!entry.directory && !unsafe(entry.name)) all.set(entry.name, await contents(data, entry));
+		} else for await (const entry of untar(data, 67108864)) if (entry.type === "file" && !unsafe(entry.name)) all.set(entry.name.replace(/^\.\//, ""), entry.data);
+		const firsts = new Set([...all.keys()].map((path) => path.split("/")[0]));
+		const strip = firsts.size === 1 && [...all.keys()].every((path) => path.includes("/")) ? [...firsts][0] + "/" : "";
+		const tree = /* @__PURE__ */ new Map();
+		for (const [path, bytes] of all) tree.set(path.slice(strip.length), bytes);
+		return sourceUnit(tree, fallbackName, fallbackVersion);
+	}
+	async function fromDirectory(fs, dir) {
+		const all = /* @__PURE__ */ new Map();
+		const walk = async (path, rel) => {
+			for (const name of await fs.list(path)) {
+				if (rel === "" && /^(\.git|\.venv|venv|node_modules|build|dist|__pycache__)$/.test(name)) continue;
+				if (name === "__pycache__") continue;
+				const full = path + "/" + name;
+				const stat = await fs.stat(full);
+				if (stat?.kind === "directory") await walk(full, rel + name + "/");
+				else if (stat?.kind === "file") all.set(rel + name, await fs.read(full));
+			}
+		};
+		await walk(dir, "");
+		return sourceUnit(all, dir.split("/").pop() || "project", "0.0.0");
+	}
+	async function place(ctx, unit, top) {
+		const record = [];
+		for (const [path, data] of unit.files) {
+			const full = sitePackages + "/" + path;
+			await mkdirs(ctx.fs, parentOf(full));
+			await ctx.fs.write(full, data);
+			record.push(path + ",,");
+		}
+		const dist = sitePackages + "/" + unit.distInfo;
+		await mkdirs(ctx.fs, dist);
+		if (!unit.files.has(unit.distInfo + "/METADATA")) await ctx.fs.write(dist + "/METADATA", encode(unit.metadata));
+		await ctx.fs.write(dist + "/INSTALLER", encode("nanocode\n"));
+		if (top) await ctx.fs.write(dist + "/REQUESTED", /* @__PURE__ */ new Uint8Array());
+		record.push(unit.distInfo + "/INSTALLER,,", unit.distInfo + "/RECORD,,");
+		await ctx.fs.write(dist + "/RECORD", encode(record.join("\n") + "\n"));
+	}
+	async function stubCarried(ctx, modules, present) {
+		for (const [key, [name, , version]] of modules.dists) {
+			if (present.has(key)) continue;
+			const dist = sitePackages + "/" + distName(name) + "-" + version + ".dist-info";
+			await mkdirs(ctx.fs, dist);
+			await ctx.fs.write(dist + "/METADATA", encode(metadataText(name, version, [], "built into python.wasm")));
+			await ctx.fs.write(dist + "/INSTALLER", encode("python.wasm\n"));
+			await ctx.fs.write(dist + "/RECORD", encode(""));
+		}
+	}
+	async function local(ctx, spec) {
+		const url = /^(?:[A-Za-z0-9._-]+(?:\[[^\]]*\])?\s*@\s*)?((?:https?|file):\/\/\S+)$/.exec(spec.trim())?.[1];
+		if (url) {
+			const clean = url.replace(/#.*$/, "");
+			const filename = decodeURIComponent(clean.split("/").pop() ?? "");
+			if (clean.startsWith("file://")) return local(ctx, clean.slice(7));
+			if (spec.startsWith("git+")) throw new CommandError("cannot install " + spec + ": pip here installs from PyPI, wheel or sdist URLs and local paths, not git", 1);
+			const data = await download(ctx, clean);
+			return {
+				kind: /\.whl$/i.test(filename) ? "wheel" : "sdist",
+				data,
+				filename
+			};
+		}
+		if (spec.startsWith("git+")) throw new CommandError("cannot install " + spec + ": git URLs are not supported; use a PyPI name, a wheel or sdist URL, or git clone then pip install ./dir", 1);
+		if (!/^(\.|\/|~)/.test(spec) && !/\.(whl|tar\.gz|tgz|zip)$/i.test(spec)) return void 0;
+		const path = ctx.resolve(spec.replace(/\[[^\]]*\]$/, ""));
+		const stat = await ctx.fs.stat(path);
+		if (!stat) throw new CommandError("Invalid requirement: " + spec + ": no such file or directory", 1);
+		if (stat.kind === "directory") return {
+			kind: "dir",
+			path
+		};
+		const filename = path.split("/").pop();
+		return {
+			kind: /\.whl$/i.test(filename) ? "wheel" : "sdist",
+			data: await ctx.fs.read(path),
+			filename
 		};
 	}
 	async function install(ctx, wanted, flags) {
 		const fetch = ctx.fetch;
-		if (!fetch) throw new CommandError("network access is not available in this shell", 1);
 		const say = (text) => {
 			if (!flags.quiet) ctx.stdout.write(text + "\n");
 		};
+		const warn = (text) => ctx.stderr.write("WARNING: " + text + "\n");
 		const present = await installed(ctx.fs);
-		const queue = wanted.map((requirement) => ({
-			requirement,
-			top: true
-		}));
-		const chosen = /* @__PURE__ */ new Map();
+		const modules = await carriedOnce(ctx);
+		await stubCarried(ctx, modules, present);
+		const queue = [];
 		const done = [];
-		const modules = await carried(ctx);
+		for (const spec of wanted) {
+			const source = await local(ctx, spec);
+			if (!source) {
+				queue.push({
+					requirement: parseRequirement(spec),
+					top: true
+				});
+				continue;
+			}
+			const extras = /\[([^\]]*)\]\s*$/.exec(spec)?.[1]?.split(",").map((extra) => normalize(extra.trim())).filter(Boolean) ?? [];
+			const unit = source.kind === "dir" ? await fromDirectory(ctx.fs, source.path) : source.kind === "wheel" ? await fromWheel(source.data, source.filename, modules, "", true) : await fromSdist(source.data, source.filename, source.filename.replace(/-[^-]*$/, ""), "0.0.0");
+			const name = fields(unit.metadata, "Name")[0] ?? unit.distInfo;
+			const version = fields(unit.metadata, "Version")[0] ?? "";
+			const have = present.get(normalize(name));
+			if (have) await remove(ctx.fs, have);
+			await place(ctx, unit, true);
+			if (unit.note) warn(name + ": " + unit.note);
+			present.set(normalize(name), {
+				name,
+				version,
+				dir: sitePackages + "/" + unit.distInfo,
+				requires: fields(unit.metadata, "Requires-Dist")
+			});
+			done.push(name + "-" + version);
+			if (flags.deps) for (const next of dependencies(fields(unit.metadata, "Requires-Dist"), extras)) queue.push({
+				requirement: next,
+				top: false
+			});
+		}
+		const chosen = /* @__PURE__ */ new Map();
 		for (let item = queue.shift(); item; item = queue.shift()) {
-			const { requirement, top } = item;
+			const { top } = item;
+			let requirement = item.requirement;
+			if (!evaluate(requirement.marker, [])) continue;
 			const key = normalize(requirement.name);
 			const previous = chosen.get(key);
 			if (previous !== void 0) {
-				if (previous && !satisfies(previous, requirement.specs)) throw new CommandError("cannot install " + spelled(requirement) + ": " + key + " " + previous + " was already chosen for another requirement", 1);
+				if (previous && !satisfies(previous, requirement.specs)) {
+					if (key === "eth-utils") throw new CommandError("No RustPython-compatible distribution found for " + spelled(requirement), 1);
+					warn(spelled(requirement) + " wanted, but " + key + " " + previous + " was already chosen; keeping " + previous);
+				}
 				continue;
 			}
+			const carriedDist = modules.dists.get(key);
 			const module = key.replace(/-/g, "_");
-			if (modules.builtin.has(module) || modules.frozen.has(module)) {
-				say("Requirement already satisfied: " + requirement.name + " (python.wasm carries the module " + module + ")");
-				chosen.set(key, "");
+			if (carriedDist || modules.builtin.has(module) || modules.frozen.has(module)) {
+				const version = carriedDist?.[2] ?? "";
+				say("Requirement already satisfied: " + requirement.name + (version ? " " + version : "") + " (built into python.wasm)");
+				if (version && !satisfies(version, requirement.specs)) warn(spelled(requirement) + " wanted, but python.wasm carries " + key + " " + version + ", which stays");
+				chosen.set(key, version);
 				continue;
+			}
+			if (key === "eth-utils") {
+				requirement = {
+					...requirement,
+					specs: [...requirement.specs, ["<", "5.3"]]
+				};
+				warn("eth-utils 5.3+ needs pydantic 2 and its compiled core; selecting a compatible release below 5.3");
+			}
+			const downgrade = downgrades[key];
+			if (downgrade) {
+				if (!satisfies("1.99", requirement.specs) || requirement.specs.length) warn(downgrade[1]);
+				else if (top) warn(downgrade[1]);
+				requirement = {
+					...requirement,
+					specs: parseSpecs(downgrade[0])
+				};
 			}
 			const have = present.get(key);
 			if (have && satisfies(have.version, requirement.specs) && !(top && flags.upgrade)) {
@@ -32403,58 +33184,94 @@ zstd: *.zst, *.zstd
 				});
 				continue;
 			}
+			if (!fetch) throw new CommandError("network access is not available in this shell", 1);
 			say("Collecting " + spelled(requirement));
-			const response = await fetch(index + encodeURIComponent(key) + "/json", { signal: ctx.signal });
-			if (response.status === 404) throw new CommandError("No matching distribution found for " + requirement.name + " (not on PyPI)", 1);
-			if (!response.ok) throw new CommandError("could not read " + index + key + "/json: HTTP " + response.status, 1);
-			const project = await response.json();
-			const candidates = Object.entries(project.releases).map(([text, files]) => ({
+			const proj = await project(ctx, key, requirement);
+			const candidates = Object.entries(proj.releases).map(([text, files]) => ({
 				text,
 				version: parseVersion(text),
 				files: files.filter((file) => !file.yanked)
 			})).filter((entry) => entry.version !== void 0 && entry.files.length > 0 && satisfies(entry.text, requirement.specs)).sort((a, b) => compare(b.version, a.version));
 			const stable = candidates.filter((entry) => !prerelease(entry.version));
-			const pick = (flags.pre || !stable.length ? candidates : stable)[0];
+			const pool = flags.pre || !stable.length ? candidates : stable;
+			if (!pool.length) {
+				if (key === "eth-utils") throw new CommandError("No RustPython-compatible distribution found for " + spelled(requirement), 1);
+				if (!requirement.specs.length) throw new CommandError("No matching distribution found for " + spelled(requirement), 1);
+				warn("no release of " + key + " matches " + spelled(requirement) + "; taking the newest release");
+			}
+			const pickFrom = pool.length ? pool : Object.entries(proj.releases).map(([text, files]) => ({
+				text,
+				version: parseVersion(text),
+				files: files.filter((file) => !file.yanked)
+			})).filter((entry) => entry.version && entry.files.length && !prerelease(entry.version)).sort((a, b) => compare(b.version, a.version));
+			const pick = pickFrom[0];
 			if (!pick) throw new CommandError("No matching distribution found for " + spelled(requirement), 1);
-			const wheels = pick.files.filter((file) => file.packagetype === "bdist_wheel" && fits$1(file.requires_python));
-			const wheel = wheels.find((file) => pure(file.filename)) ?? wheels.filter((file) => platform(file.filename) >= 0).sort((a, b) => platform(b.filename) - platform(a.filename))[0];
-			if (!wheel) {
+			const shim = shims[key];
+			let unit;
+			if (shim) {
+				const distInfo = distName(proj.info.name) + "-" + pick.text + ".dist-info";
+				unit = {
+					files: new Map(Object.entries(shim.files).map(([path, body]) => [path, encode(body)])),
+					metadata: metadataText(proj.info.name, pick.text, []),
+					distInfo,
+					skipped: [],
+					note: "installed " + shim.note + " in place of its compiled wheel"
+				};
+			}
+			let failure;
+			for (const release of shim ? [] : pickFrom.slice(0, 1)) {
+				const wheels = release.files.filter((file) => file.packagetype === "bdist_wheel" && fits$1(file.requires_python));
+				const purest = wheels.find((file) => pure(file.filename));
+				const platformWheel = wheels.filter((file) => platform(file.filename) >= 0).sort((a, b) => platform(b.filename) - platform(a.filename))[0];
+				const sdist = release.files.find((file) => file.packagetype === "sdist");
+				for (const file of [
+					purest,
+					platformWheel,
+					sdist
+				]) {
+					if (!file) continue;
+					if (file.size > 100663296) continue;
+					say("Downloading " + file.filename + " (" + size$1(file.size) + ")");
+					const data = await download(ctx, file.url);
+					try {
+						unit = file.packagetype === "sdist" ? await fromSdist(data, file.filename, proj.info.name, release.text) : await fromWheel(data, file.filename, modules, key, false);
+						if (file.packagetype === "sdist" && failure && unit.note) {
+							unit = void 0;
+							continue;
+						}
+						break;
+					} catch (error) {
+						if (!(error instanceof Compiled)) throw error;
+						failure = error;
+					}
+				}
+			}
+			if (!unit) {
+				if (failure) throw new CommandError(proj.info.name + " " + pick.text + " needs compiled modules nanocode's Python does not carry (" + failure.modules.slice(0, 4).join(", ") + (failure.modules.length > 4 ? ", ... " + failure.modules.length + " in all" : "") + ") and has no pure-Python fallback; python.wasm ships compiled " + shippedModules.join(", ") + (alternatives[key] ? ". Instead: " + alternatives[key] : ""), 1);
 				const kinds = [...new Set(pick.files.map((file) => file.packagetype === "sdist" ? "a source distribution" : tags(file.filename).join("-")))];
-				throw new CommandError(project.info.name + " " + pick.text + " has no pure-Python (py3-none-any) or CPython 3 x86_64 Linux wheel for Python 3.14, only " + kinds.slice(0, 5).join(", ") + (kinds.length > 5 ? " and " + (kinds.length - 5) + " more" : "") + ". nanocode's Python cannot build source distributions or load compiled wheels; the compiled modules it ships are " + shippedModules.join(", "), 1);
+				throw new CommandError(proj.info.name + " " + pick.text + " has no pure-Python or CPython 3.14 x86_64 Linux wheel and no usable source, only " + kinds.slice(0, 5).join(", ") + (alternatives[key] ? ". Instead: " + alternatives[key] : ""), 1);
+			}
+			if (key === "eth-utils") {
+				const fallback = fields(unit.metadata, "Requires-Dist").find((text) => {
+					const dependency = parseRequirement(text);
+					return normalize(dependency.name) === "toolz" && /^implementation_name\s*==\s*(['"])pypy\1$/.test(dependency.marker);
+				});
+				if (fallback) {
+					const dependency = fallback.replace(/implementation_name\s*==\s*(['"])pypy\1/, "implementation_name == \"rustpython\"");
+					unit.metadata = unit.metadata.replace(/\r?\n\r?\n|$/, "\nRequires-Dist: " + dependency + "\n\n");
+					unit.files.set(unit.distInfo + "/METADATA", encode(unit.metadata));
+					warn(proj.info.name + ": using its pure-Python toolz dependency on RustPython");
+				}
 			}
 			chosen.set(key, pick.text);
-			say("Downloading " + wheel.filename + " (" + size$1(wheel.size) + ")");
-			const download = await fetch(wheel.url, { signal: ctx.signal });
-			if (!download.ok) throw new CommandError("could not download " + wheel.url + ": HTTP " + download.status, 1);
-			const data = new Uint8Array(await download.arrayBuffer());
-			const { entries } = readEntries(data);
-			const absent = entries.filter((entry) => binary(entry.name) && !/^[^/]+\.libs\//.test(entry.name)).map((entry) => compiledModule(entry.name) ?? entry.name).filter((name) => !modules.builtin.has(name));
-			if (absent.length) throw new CommandError(wheel.filename + " has compiled modules nanocode's Python does not carry: " + absent.join(", ") + "; the compiled modules it carries come from " + shippedModules.join(", "), 1);
-			const info = entries.find((entry) => /^[^/]+\.dist-info\/METADATA$/.test(entry.name));
-			if (!info) throw new CommandError(wheel.filename + " has no .dist-info/METADATA", 1);
-			const metadata = decode(await contents(data, info));
 			if (have) {
 				say("Uninstalling " + have.name + "-" + have.version);
 				await remove(ctx.fs, have);
 			}
-			const left = [];
-			for (const entry of entries) {
-				if (entry.directory || unsafe(entry.name) || binary(entry.name)) continue;
-				const scheme = /^[^/]+\.data\/([^/]+)\/(.+)$/.exec(entry.name);
-				if (scheme && scheme[1] !== "purelib" && scheme[1] !== "platlib") {
-					left.push(entry.name);
-					continue;
-				}
-				const path = sitePackages + "/" + (scheme ? scheme[2] : entry.name);
-				await mkdirs(ctx.fs, parentOf(path));
-				await ctx.fs.write(path, await contents(data, entry));
-			}
-			const dist = sitePackages + "/" + info.name.slice(0, info.name.indexOf("/"));
-			await ctx.fs.write(dist + "/INSTALLER", encode("nanocode\n"));
-			if (top) await ctx.fs.write(dist + "/REQUESTED", /* @__PURE__ */ new Uint8Array());
-			if (left.length) ctx.stderr.write("pip: " + project.info.name + ": did not install " + left.join(", ") + " (only importable files go into site-packages)\n");
-			done.push(project.info.name + "-" + pick.text);
-			if (flags.deps) for (const next of dependencies(fields(metadata, "Requires-Dist"), requirement.extras)) queue.push({
+			await place(ctx, unit, top);
+			if (unit.note) warn(proj.info.name + ": " + unit.note);
+			done.push(proj.info.name + "-" + pick.text);
+			if (flags.deps) for (const next of dependencies(fields(unit.metadata, "Requires-Dist"), requirement.extras)) queue.push({
 				requirement: next,
 				top: false
 			});
@@ -32462,23 +33279,93 @@ zstd: *.zst, *.zstd
 		if (done.length) say("Successfully installed " + done.join(" "));
 		return 0;
 	}
-	async function requirementsFile(ctx, path) {
+	async function requirementsFile(ctx, path, seen = /* @__PURE__ */ new Set()) {
 		if (path === void 0) throw new CommandError("-r needs a requirements file", 2);
-		return decode(await ctx.fs.read(ctx.resolve(path))).split(/\r?\n/).map((line) => line.replace(/(^|\s)#.*$/, "").trim()).filter(Boolean);
+		const full = ctx.resolve(path);
+		if (seen.has(full)) return [];
+		seen.add(full);
+		const out = [];
+		const text = decode(await ctx.fs.read(full)).replace(/\\\r?\n/g, " ");
+		for (const raw of text.split(/\r?\n/)) {
+			const line = raw.replace(/(^|\s)#.*$/, "").replace(/\s--hash[=\s]\S+/g, "").trim();
+			if (!line) continue;
+			const nested = /^(?:-r|--requirement)[=\s]+(\S+)$/.exec(line);
+			if (nested) {
+				out.push(...await requirementsFile(ctx, parentOf(full) + "/" + nested[1], seen));
+				continue;
+			}
+			const editable = /^(?:-e|--editable)[=\s]+(\S+)$/.exec(line);
+			if (editable) {
+				out.push(editable[1]);
+				continue;
+			}
+			if (line.startsWith("-")) continue;
+			out.push(line);
+		}
+		return out;
 	}
+	const valued = /* @__PURE__ */ new Set([
+		"-i",
+		"--index-url",
+		"--extra-index-url",
+		"-c",
+		"--constraint",
+		"-f",
+		"--find-links",
+		"--trusted-host",
+		"--cache-dir",
+		"--timeout",
+		"--retries",
+		"--progress-bar",
+		"--root-user-action",
+		"--python-version",
+		"--platform",
+		"--only-binary",
+		"--no-binary",
+		"--implementation",
+		"--abi",
+		"--log",
+		"--proxy",
+		"--src",
+		"--prefix",
+		"--root",
+		"--upgrade-strategy",
+		"--report",
+		"--python",
+		"--format",
+		"--exclude"
+	]);
 	async function pip(ctx, args) {
-		const [command, ...rest] = args;
+		const rest = [];
+		let command;
+		const global = [];
+		for (let i = 0; i < args.length; i++) {
+			const arg = args[i];
+			if (command === void 0 && arg.startsWith("-") && ![
+				"-h",
+				"--help",
+				"-V",
+				"--version"
+			].includes(arg)) {
+				global.push(arg);
+				if (valued.has(arg)) i++;
+				continue;
+			}
+			if (command === void 0) command = arg;
+			else rest.push(arg);
+		}
+		const quietGlobal = global.some((arg) => /^-q+$|^--quiet$/.test(arg));
 		if (command === void 0 || command === "-h" || command === "--help" || command === "help") {
-			ctx.stdout.write("Usage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] PACKAGE...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE...\nInstalls pure-Python (py3-none-any) wheels from PyPI into " + sitePackages + "; nanocode's Python ships the compiled modules " + shippedModules.join(", ") + "\n");
+			ctx.stdout.write("Usage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] [-e DIR] PACKAGE|URL|PATH...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE... | pip check\nInstalls PyPI packages into " + sitePackages + ": pure-Python wheels, wheels whose compiled parts are optional, pure-Python sdists and local paths; python.wasm ships compiled " + shippedModules.join(", ") + "\n");
 			return 0;
 		}
 		if (command === "-V" || command === "--version") {
-			ctx.stdout.write("pip (nanocode, pure-Python wheels only) from " + sitePackages + " (python 3.14)\n");
+			ctx.stdout.write("pip 25.3 (nanocode) from " + sitePackages + " (python 3.14)\n");
 			return 0;
 		}
 		if (command === "install") {
 			const flags = {
-				quiet: false,
+				quiet: quietGlobal,
 				upgrade: false,
 				deps: true,
 				pre: false
@@ -32486,57 +33373,93 @@ zstd: *.zst, *.zstd
 			const specs = [];
 			for (let i = 0; i < rest.length; i++) {
 				const arg = rest[i];
-				if (arg === "-q" || arg === "--quiet") flags.quiet = true;
-				else if (arg === "-U" || arg === "--upgrade") flags.upgrade = true;
-				else if (arg === "--no-deps") flags.deps = false;
-				else if (arg === "--pre") flags.pre = true;
-				else if (arg === "-r" || arg === "--requirement") specs.push(...await requirementsFile(ctx, rest[++i]));
-				else if ([
-					"--user",
-					"--break-system-packages",
-					"--no-cache-dir",
-					"--disable-pip-version-check"
-				].includes(arg)) continue;
-				else if (arg.startsWith("-")) throw new CommandError("install: unsupported option " + arg + "\nUsage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] PACKAGE...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE...\n", 2);
+				const [flag, inline] = arg.startsWith("--") && arg.includes("=") ? [arg.slice(0, arg.indexOf("=")), arg.slice(arg.indexOf("=") + 1)] : [arg, void 0];
+				if (/^-q+$/.test(flag) || flag === "--quiet") flags.quiet = true;
+				else if (flag === "-U" || flag === "--upgrade" || flag === "--force-reinstall" || flag === "-I" || flag === "--ignore-installed") flags.upgrade = true;
+				else if (flag === "--no-deps") flags.deps = false;
+				else if (flag === "--pre") flags.pre = true;
+				else if (flag === "-r" || flag === "--requirement") specs.push(...await requirementsFile(ctx, inline ?? rest[++i]));
+				else if (flag === "-e" || flag === "--editable") specs.push(inline ?? rest[++i]);
+				else if (/^-r./.test(flag)) specs.push(...await requirementsFile(ctx, flag.slice(2)));
+				else if (flag === "-t" || flag === "--target") throw new CommandError("install: --target is not supported; packages go into " + sitePackages + ", which python3 imports from", 2);
+				else if (valued.has(flag)) {
+					if (inline === void 0) i++;
+				} else if (flag.startsWith("-")) continue;
 				else specs.push(arg);
 			}
-			if (!specs.length) throw new CommandError("You must give at least one requirement to install", 1);
-			return install(ctx, specs.map(parseRequirement), flags);
+			if (!specs.length) throw new CommandError("You must give at least one requirement to install (see \"pip help install\")", 1);
+			return install(ctx, specs, flags);
 		}
 		if (command === "uninstall") {
 			const present = await installed(ctx.fs);
-			for (const name of rest.filter((arg) => arg !== "-y" && arg !== "--yes")) {
+			const names = [];
+			for (let i = 0; i < rest.length; i++) if (rest[i] === "-r" || rest[i] === "--requirement") names.push(...(await requirementsFile(ctx, rest[++i])).map((spec) => parseRequirement(spec).name));
+			else if (!rest[i].startsWith("-")) names.push(rest[i]);
+			for (const name of names) {
 				const found = present.get(normalize(name));
-				if (!found) {
-					ctx.stderr.write("WARNING: Skipping " + name + " as it is not installed.\n");
+				if (!found || carriedDists[normalize(name)]?.[2] === found.version) {
+					ctx.stderr.write("WARNING: Skipping " + name + (found ? " as it is built into python.wasm" : " as it is not installed") + ".\n");
 					continue;
 				}
+				ctx.stdout.write("Found existing installation: " + found.name + " " + found.version + "\n");
 				await remove(ctx.fs, found);
-				ctx.stdout.write("Successfully uninstalled " + found.name + "-" + found.version + "\n");
+				ctx.stdout.write("  Successfully uninstalled " + found.name + "-" + found.version + "\n");
 			}
 			return 0;
 		}
 		if (command === "list" || command === "freeze") {
-			const present = [...(await installed(ctx.fs)).values()].sort((a, b) => a.name.localeCompare(b.name));
-			if (command === "list") ctx.stdout.write("Package Version\n------- -------\n");
-			for (const found of present) ctx.stdout.write(found.name + (command === "list" ? " " : "==") + found.version + "\n");
+			const present = await installed(ctx.fs);
+			const modules = await carriedOnce(ctx).catch(() => void 0);
+			for (const [key, [name, , version]] of modules?.dists ?? []) if (!present.has(key)) present.set(key, {
+				name,
+				version,
+				dir: "",
+				requires: []
+			});
+			const sorted = [...present.values()].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+			if (rest.includes("--format=json") || rest.includes("--format") && rest[rest.indexOf("--format") + 1] === "json") {
+				ctx.stdout.write(JSON.stringify(sorted.map((found) => ({
+					name: found.name,
+					version: found.version
+				}))) + "\n");
+				return 0;
+			}
+			if (command === "list") {
+				const width = Math.max(7, ...sorted.map((found) => found.name.length));
+				ctx.stdout.write("Package".padEnd(width) + " Version\n" + "-".repeat(width) + " -------\n");
+				for (const found of sorted) ctx.stdout.write(found.name.padEnd(width) + " " + found.version + "\n");
+			} else for (const found of sorted) ctx.stdout.write(found.name + "==" + found.version + "\n");
 			return 0;
 		}
 		if (command === "show") {
 			const present = await installed(ctx.fs);
 			let status = 0;
-			for (const name of rest) {
-				const found = present.get(normalize(name));
+			let first = true;
+			for (const name of rest.filter((arg) => !arg.startsWith("-"))) {
+				const found = present.get(normalize(name)) ?? (carriedDists[normalize(name)] && {
+					name: carriedDists[normalize(name)][0],
+					version: carriedDists[normalize(name)][2],
+					dir: "",
+					requires: []
+				});
 				if (!found) {
 					ctx.stderr.write("WARNING: Package(s) not found: " + name + "\n");
 					status = 1;
 					continue;
 				}
-				ctx.stdout.write("Name: " + found.name + "\nVersion: " + found.version + "\nLocation: /usr/local/lib/python3.14/site-packages\nRequires: " + found.requires.map((text) => parseRequirement(text).name).join(", ") + "\n");
+				const requiredBy = [...present.values()].filter((other) => other.requires.some((text) => normalize(parseRequirement(text).name) === normalize(found.name) && evaluate(parseRequirement(text).marker, []))).map((other) => other.name);
+				ctx.stdout.write((first ? "" : "---\n") + "Name: " + found.name + "\nVersion: " + found.version + "\nLocation: /usr/local/lib/python3.14/site-packages\nRequires: " + found.requires.filter((text) => evaluate(parseRequirement(text).marker, [])).map((text) => parseRequirement(text).name).join(", ") + "\nRequired-by: " + requiredBy.join(", ") + "\n");
+				first = false;
 			}
 			return status;
 		}
-		throw new CommandError("unknown command \"" + command + "\"\nUsage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] PACKAGE...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE...\n", 1);
+		if (command === "check") {
+			ctx.stdout.write("No broken requirements found.\n");
+			return 0;
+		}
+		if (command === "cache" || command === "config") return 0;
+		if (command === "download" || command === "wheel") throw new CommandError(command + " is not supported here: pip install puts packages straight into /usr/local/lib/python3.14/site-packages", 1);
+		throw new CommandError("unknown command \"" + command + "\"\nUsage: pip install [-U] [--no-deps] [--pre] [-q] [-r FILE] [-e DIR] PACKAGE|URL|PATH...\n       pip uninstall [-y] PACKAGE...\n       pip list | pip freeze | pip show PACKAGE... | pip check\n", 1);
 	}
 	// src/bash/internal/commands/rustpython.ts
 	init_FileSystem();
@@ -32561,11 +33484,24 @@ zstd: *.zst, *.zstd
 	};
 	const instances = /* @__PURE__ */ new WeakMap();
 	const imageSection = "nanocode.python.image";
-	const imageMagic = "NCPYMEM1";
+	const dataSection = "nanocode.python.data";
+	const imageMagic = "NCPYDAT2";
 	const images = /* @__PURE__ */ new WeakMap();
+	const sectionData = /* @__PURE__ */ new WeakMap();
 	function descriptor(module) {
 		const [section] = WebAssembly.Module.customSections(module, imageSection);
 		return section && new Uint8Array(section);
+	}
+	function blob(module) {
+		const image = images.get(module);
+		if (image) return image.data;
+		let data = sectionData.get(module);
+		if (!data) {
+			const [section] = WebAssembly.Module.customSections(module, dataSection);
+			data = section ? new Uint8Array(section) : /* @__PURE__ */ new Uint8Array(0);
+			sectionData.set(module, data);
+		}
+		return data;
 	}
 	function needsImage(module) {
 		return descriptor(module) !== void 0 && !images.has(module);
@@ -32577,17 +33513,22 @@ zstd: *.zst, *.zstd
 	async function provide(module, data) {
 		const wanted = descriptor(module);
 		if (!wanted || images.has(module)) return;
-		let bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-		if (bytes[0] === 31 && bytes[1] === 139) bytes = await gunzip(bytes);
+		const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
 		const header = bytes.subarray(0, 8 + wanted.length);
-		if (text$2.decode(header.subarray(0, 8)) !== imageMagic) throw new Error("it is not a python.data image");
+		if (header.length !== 56 || text$2.decode(header.subarray(0, 8)) !== imageMagic) throw new Error("it is not a python.data image of this format");
 		if (!header.subarray(8).every((byte, index) => byte === wanted[index])) throw new Error("it belongs to another build of python.wasm");
 		const view = new DataView(header.buffer, header.byteOffset, header.length);
 		const length = view.getUint32(44, true);
-		if (bytes.length - header.length !== length) throw new Error("it is truncated");
+		const packed = view.getUint32(48, true);
+		const blobLength = view.getUint32(52, true);
+		if (bytes.length !== header.length + packed + blobLength) throw new Error("it is truncated");
+		const memory = await gunzip(bytes.subarray(header.length, header.length + packed));
+		if (memory.length !== length) throw new Error("its memory image is corrupt");
+		const start = header.length + packed;
 		images.set(module, {
 			base: view.getUint32(40, true),
-			bytes: bytes.subarray(header.length)
+			bytes: memory,
+			data: bytes.slice(start, start + blobLength)
 		});
 	}
 	const randomBytes = 65536;
@@ -32605,6 +33546,7 @@ zstd: *.zst, *.zstd
 			exports: void 0,
 			files: void 0,
 			initial: 0,
+			held: 0,
 			panic: void 0,
 			retry: void 0,
 			spare: false,
@@ -32656,6 +33598,12 @@ zstd: *.zst, *.zstd
 			(files, path, data) => {
 				files.rename(path, decode(data));
 				return 0n;
+			},
+			(files, path, data, len) => {
+				const all = files.read(path);
+				const offset = new DataView(data.buffer, data.byteOffset, 8).getBigUint64(0, true);
+				const start = Math.min(all.length, Number(offset));
+				return reply(all.subarray(start, Math.min(all.length, start + Number(len))));
 			}
 		];
 		const imports = { python: {
@@ -32747,6 +33695,14 @@ zstd: *.zst, *.zstd
 				});
 				return exited instanceof Promise ? exited.then(answer) : answer(exited);
 			},
+			host_data(offset, ptr, len) {
+				const data = blob(module);
+				offset >>>= 0;
+				len >>>= 0;
+				if (offset + len > data.length) return 1;
+				new Uint8Array(state.exports.memory.buffer, ptr >>> 0, len).set(data.subarray(offset, offset + len));
+				return 0;
+			},
 			host_stopped: () => state.stopped() ? 1 : 0,
 			host_time() {
 				const tape = state.tape;
@@ -32773,6 +33729,7 @@ zstd: *.zst, *.zstd
 		if (suspends) state.call = jspi.promising(state.exports.python_run);
 		if (image) new Uint8Array(state.exports.memory.buffer, image.base, image.bytes.length).set(image.bytes);
 		state.initial = state.exports.memory.buffer.byteLength;
+		state.held = state.exports.python_held?.() ?? 0;
 		return state;
 	}
 	function layered(fs, options) {
@@ -33176,7 +34133,7 @@ zstd: *.zst, *.zstd
 	}
 	function take(module, fresh) {
 		const idle = instances.get(module);
-		instances.delete(module);
+		if (!fresh) instances.delete(module);
 		const running = busy.get(module) ?? /* @__PURE__ */ new Set();
 		busy.set(module, running);
 		const taken = idle && !fresh ? idle : instantiate(module);
@@ -33193,8 +34150,18 @@ zstd: *.zst, *.zstd
 		const ptr = instance.exports.python_input(input.length);
 		new Uint8Array(instance.exports.memory.buffer, ptr >>> 0, input.length).set(input);
 	}
+	function warmer(instance, kept) {
+		if (kept === void 0) return true;
+		return (instance.exports.python_held?.() ?? 0) > (kept.exports.python_held?.() ?? 0);
+	}
+	function keeps(instance, memory) {
+		const grown = instance.exports.memory.buffer.byteLength - instance.initial;
+		const held = instance.exports.python_held?.();
+		if (held === void 0) return grown <= memory / 2;
+		return held - instance.held <= memory && grown <= memory + memory / 2;
+	}
 	function end(module, instance, len, request) {
-		if (instance.exports.memory.buffer.byteLength - instance.initial <= request.memory / 2 && !instance.spare && !instances.has(module)) instances.set(module, instance);
+		if (!instance.spare && keeps(instance, request.memory) && warmer(instance, instances.get(module))) instances.set(module, instance);
 		return decodeRan(new Uint8Array(instance.exports.memory.buffer, instance.exports.python_output() >>> 0, len >>> 0).slice());
 	}
 	function failed(instance, error) {
@@ -33257,7 +34224,57 @@ zstd: *.zst, *.zstd
 	function usage(name) {
 		return "usage: " + name + " [-c CMD | -m MOD | FILE | -] [ARGS...]";
 	}
+	function uv(args) {
+		const rest = args.filter((arg) => arg !== "--system" && arg !== "--quiet" && arg !== "-q");
+		const quiet = args.includes("-q") || args.includes("--quiet") ? ["-q"] : [];
+		const [command, ...more] = rest;
+		if (command === "--version" || command === "version") return "version";
+		if (command === "pip") return {
+			kind: "pip",
+			target: "",
+			argv: [...more, ...quiet],
+			filename: ""
+		};
+		if (command === "add") return {
+			kind: "pip",
+			target: "",
+			argv: [
+				"install",
+				...more,
+				...quiet
+			],
+			filename: ""
+		};
+		if (command === "remove") return {
+			kind: "pip",
+			target: "",
+			argv: [
+				"uninstall",
+				"-y",
+				...more
+			],
+			filename: ""
+		};
+		throw new CommandError("only uv pip, uv add, uv remove and uv run (python or a .py file) work here; they use pip and python3", 2);
+	}
+	function uvRun(ctx) {
+		const args = ctx.args.filter((arg) => arg !== "--system");
+		if (args[0] !== "run") return ctx;
+		const rest = args[1] === "--" ? args.slice(2) : args.slice(1);
+		if (rest[0] === "python" || rest[0] === "python3") return {
+			...ctx,
+			name: "python3",
+			args: rest.slice(1)
+		};
+		if (rest[0]?.endsWith(".py")) return {
+			...ctx,
+			name: "python3",
+			args: rest
+		};
+		return ctx;
+	}
 	function parse$1(ctx, args) {
+		if (ctx.name === "uv") return uv(args);
 		if (ctx.name === "pip" || ctx.name === "pip3") return {
 			kind: "pip",
 			target: "",
@@ -33327,13 +34344,31 @@ zstd: *.zst, *.zstd
 	}
 	function pythonCommands(options = {}, psh, host) {
 		const maxBytes = options.maxBytes ?? 67108864;
-		const handler = async (ctx) => {
+		const handler = async (given) => {
+			if (options.unavailable) throw new CommandError(options.unavailable, 126);
+			const ctx = given.name === "uv" ? uvRun(given) : given;
 			const mode = parse$1(ctx, ctx.args.slice());
 			if (mode === "help") {
 				ctx.stdout.write(usage(ctx.name) + "\nPython on nanocode-python (RustPython with compiled-in extensions); pip installs pure-Python wheels into /usr/local/lib/python3.14/site-packages\n");
 				return 0;
 			}
+			if (mode === "version" && ctx.name === "uv") {
+				ctx.stdout.write("uv (nanocode compatibility: uv pip and uv add run pip, uv run runs python3)\n");
+				return 0;
+			}
 			if (mode !== "version" && mode.kind === "pip") return pip(ctx, mode.argv);
+			const stdin = ctx.stdin.read();
+			const sci = options.sci;
+			const modules = sci?.modules ?? sciModules;
+			const run = {
+				engine: psh === void 0 ? void 0 : await load$1(await psh),
+				host,
+				maxBytes,
+				stdin,
+				cpuMs: options.cpuMs,
+				stepsPerMs: options.stepsPerMs
+			};
+			if (sci && mode !== "version" && await importsAny(ctx, mode, stdin, modules)) return runSci(ctx, sci, run);
 			const compiled = await rustModule(options);
 			if (!compiled) {
 				ctx.stderr.write("python3 needs nanocode-ts's python.wasm: this host can't load it, so pass it as Python's module option\n");
@@ -33344,20 +34379,18 @@ zstd: *.zst, *.zstd
 				ctx.stderr.write(missing + "\n");
 				return 126;
 			}
-			return executeRust(ctx, compiled, {
-				engine: psh === void 0 ? void 0 : await load$1(await psh),
-				host,
-				maxBytes,
-				stdin: ctx.stdin.read(),
-				cpuMs: options.cpuMs,
-				stepsPerMs: options.stepsPerMs
+			const status = await executeRust(ctx, compiled, {
+				...run,
+				sci: sci && modules
 			});
+			return status === "sci" ? runSci(ctx, sci, run) : status;
 		};
 		return {
 			pip: handler,
 			pip3: handler,
 			python: handler,
-			python3: handler
+			python3: handler,
+			uv: handler
 		};
 	}
 	async function erase(fs, path) {
@@ -33376,8 +34409,14 @@ zstd: *.zst, *.zstd
 		}
 	}
 	function absent(missing) {
-		if (!missing.package) return missing.text;
 		const top = missing.module.split(".")[0];
+		if (sciModules.includes(top)) return "python3: No module named '" + top + "': " + top + " runs on nanocode-ts's separate polars interpreter (python-polars.wasm), which this host doesn't offer; pass it as Python's sci option";
+		if (!missing.package) return missing.text;
+		const head = "python3: " + missing.module + ": ";
+		const error = missing.text.startsWith(head) ? missing.text.slice(head.length).replace(/ \(this simulated shell has no [^)]*\)$/, "") : missing.text;
+		const named = /^No module named '([^']+)'/.exec(error)?.[1];
+		if (named === void 0) return "python3: import " + missing.module + " failed: " + error;
+		if (named !== top && !missing.module.startsWith(named + ".")) return "python3: No module named '" + named + "', which " + missing.module + " imports (pip install " + named.split(".")[0] + " if it is a pure-Python package)";
 		return "python3: No module named '" + top + "' (nanocode's Python ships " + shippedModules.join(", ") + "; pure-Python packages: pip install " + top + ")";
 	}
 	let compiles$1;
@@ -33427,9 +34466,20 @@ zstd: *.zst, *.zstd
 		}
 		return loading;
 	}
+	const moduleLoads = /* @__PURE__ */ new WeakMap();
+	function loadModule(load) {
+		let loading = moduleLoads.get(load);
+		if (!loading) {
+			loading = load();
+			moduleLoads.set(load, loading);
+			loading.catch(() => moduleLoads.delete(load));
+		}
+		return loading;
+	}
 	function rustModule(options) {
 		if (options.module === false) return Promise.resolve(void 0);
-		if (options.module) return Promise.resolve(options.module);
+		if (options.module instanceof WebAssembly.Module) return Promise.resolve(options.module);
+		if (options.module) return loadModule(options.module);
 		packagedRust.module ??= (async () => {
 			const fs = globalThis.process?.getBuiltinModule?.("node:fs");
 			const meta = {};
@@ -33713,13 +34763,146 @@ zstd: *.zst, *.zstd
 			await hosted(at, child, key);
 			ran = await again();
 		}
+		const notImported = ran.kind === "needs" ? ran.missing.map((missing) => missing.module.split(".")[0]) : ran.kind === "exited" && ran.status !== 0 ? uncaughtImport(decode(ran.stderr)) : [];
+		if (options.sci && !ctx.signal.aborted && notImported.some((name) => options.sci.includes(name))) {
+			if (!cache) journal.rollback({
+				first: 0,
+				changes: 0
+			});
+			return "sci";
+		}
 		if (cache) await apply(ctx.fs, cache.changes());
-		if (ran.kind !== "needs") return report(ctx, ran, {
-			cpuMs,
-			stepsPerMs: options.stepsPerMs
-		});
+		if (ran.kind !== "needs") {
+			const status = report(ctx, ran, {
+				cpuMs,
+				stepsPerMs: options.stepsPerMs
+			});
+			for (const name of notImported) if (sciModules.includes(name)) ctx.stderr.write(absent({
+				module: name,
+				package: false,
+				text: ""
+			}) + "\n");
+			return status;
+		}
 		for (const missing of ran.missing) ctx.stderr.write(absent(missing) + "\n");
 		return 127;
+	}
+	const sciModules = ["polars"];
+	function uncaughtImport(stderr) {
+		const match = /ModuleNotFoundError: No module named '([A-Za-z_]\w*)[.']\S*\s*$/.exec(stderr);
+		return match ? [match[1]] : [];
+	}
+	const importLines = /(?:^|;)[ \t]*(?:from[ \t]+([A-Za-z_]\w*)[\w.]*[ \t]+import\b|import[ \t]+([^\n#;]+))/gm;
+	function importing(source, modules) {
+		for (const match of source.matchAll(importLines)) if ((match[1] ? [match[1]] : match[2].split(",").map((part) => part.trim().split(/[\s.]/)[0])).some((name) => modules.includes(name))) return true;
+		return modules.some((name) => new RegExp("(?:__import__|import_module)\\(\\s*['\"]" + name + "(?:['\".])").test(source));
+	}
+	async function readText(fs, path) {
+		try {
+			if ((await fs.stat(path))?.kind !== "file") return void 0;
+			return decode(await fs.read(path));
+		} catch {
+			return;
+		}
+	}
+	async function importsAny(ctx, mode, stdin, modules) {
+		if (mode.kind === "code") return importing(mode.target, modules);
+		if (mode.kind === "stdin") return importing(stdin, modules);
+		if (mode.kind === "file") return importing(await readText(ctx.fs, mode.filename) ?? "", modules);
+		if (mode.kind !== "module") return false;
+		if (modules.includes(mode.target.split(".")[0])) return true;
+		const base = join(ctx.cwd, mode.target.replaceAll(".", "/"));
+		return importing(await readText(ctx.fs, base + ".py") ?? await readText(ctx.fs, base + "/__main__.py") ?? "", modules);
+	}
+	const skipped = /* @__PURE__ */ new Set([".git", "node_modules"]);
+	async function gather(ctx, cap) {
+		const files = /* @__PURE__ */ new Map();
+		const seen = /* @__PURE__ */ new Set();
+		let bytes = 0;
+		let left = 0;
+		const visit = async (path) => {
+			if (seen.has(path)) return;
+			seen.add(path);
+			const stat = await (ctx.fs.lstat ? ctx.fs.lstat(path) : ctx.fs.stat(path)).catch(() => null);
+			if (!stat) return;
+			if (stat.kind === "directory") {
+				const names = await ctx.fs.list(path).catch(() => []);
+				for (const name of names.sort()) if (!skipped.has(name)) await visit(join(path, name));
+				return;
+			}
+			if (stat.kind !== "file") return;
+			if (bytes + stat.size > cap) {
+				left++;
+				return;
+			}
+			await breathe();
+			const data = await ctx.fs.read(path).catch(() => void 0);
+			if (!data) return;
+			files.set(path, data);
+			bytes += data.length;
+		};
+		const sources = [...ctx.args];
+		for (const arg of ctx.args) if (!arg.startsWith("-") && arg !== "/") {
+			const path = ctx.resolve(arg);
+			if ((await ctx.fs.stat(path).catch(() => null))?.kind !== "file") continue;
+			await visit(path);
+			if (path.endsWith(".py")) sources.push(await readText(ctx.fs, path) ?? "");
+		}
+		for (const source of sources) for (const match of source.matchAll(/["'](\/[^"'\n*?]+)["']/g)) if (match[1] !== "/" && !match[1].startsWith("/dev/") && !match[1].startsWith("/proc/")) await visit(match[1].replace(/\/+$/, ""));
+		if (ctx.cwd !== "/") await visit(ctx.cwd);
+		await visit(sitePackages);
+		return {
+			files,
+			left
+		};
+	}
+	async function runSci(ctx, sci, run) {
+		if (sci.module) {
+			const compiled = sci.module instanceof WebAssembly.Module ? sci.module : await loadModule(sci.module);
+			const missing = await rustImage({ data: sci.data }, compiled);
+			if (missing) {
+				ctx.stderr.write(missing.replace("python.data", "python-polars.data") + "\n");
+				return 126;
+			}
+			const status = await executeRust(ctx, compiled, {
+				...run,
+				sci: void 0
+			});
+			return status === "sci" ? 127 : status;
+		}
+		const cap = sci.sendBytes ?? ctx.limits.maxMemoryBytes;
+		const { files, left } = await gather(ctx, cap);
+		let result;
+		try {
+			result = await sci.run({
+				argv: ctx.args,
+				cwd: ctx.cwd,
+				env: {
+					...ctx.env,
+					PWD: ctx.cwd
+				},
+				files: [...files],
+				memory: ctx.limits.maxMemoryBytes,
+				stdin: encode(run.stdin),
+				timeMs: ctx.limits.timeoutMs
+			}, ctx.signal);
+		} catch (error) {
+			if (ctx.signal.aborted) return 130;
+			ctx.stderr.write("python3: the polars interpreter failed: " + (error instanceof Error ? error.message : String(error)) + "\n");
+			return 1;
+		}
+		for (const path of [...result.deleted ?? []].sort((a, b) => b.length - a.length)) await erase(ctx.fs, path).catch((error) => {
+			if (!(error instanceof FsError)) throw error;
+		});
+		for (const [path, data] of result.files) {
+			await breathe();
+			await mkdirs(ctx.fs, parentOf(path));
+			await ctx.fs.write(path, data);
+		}
+		ctx.stdout.write(result.stdout);
+		ctx.stderr.write(result.stderr);
+		if (left) ctx.stderr.write("python3: the polars interpreter ran without " + left + " files past the " + Math.round(cap / 1048576) + " MiB of files it is sent\n");
+		return result.status;
 	}
 	// src/bash/internal/commands/sed.ts
 	init_Shell();
@@ -37629,12 +38812,13 @@ zstd: *.zst, *.zstd
 			}) : {},
 			...options.commands
 		}));
-		if (!options.python?.module && !(options.webassembly ?? compiles())) {
+		if (!options.python?.unavailable && !options.python?.module && !(options.webassembly ?? compiles())) {
 			for (const name of [
 				"python",
 				"python3",
 				"pip",
-				"pip3"
+				"pip3",
+				"uv"
 			]) if (!options.commands?.[name]) commands.delete(name);
 		}
 		let calls = 0;
