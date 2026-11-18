@@ -16,9 +16,23 @@ These principles come from nanocodexyz/nanocode's `AGENTS.md` and apply to every
 - Inference, subagents and durability live in the brain; Code Mode runs on the user's machine. Never silently replay dispatched work: report uncertain outcomes.
 - Validate by building the XCFramework, `swift build`, the example apps with `xcodebuild` and runs of `Examples/Console`, and back performance changes with reproducible before/after measurements, keeping cold builds, incremental builds and runtime performance separate.
 - Check behavior with harnesses in ignored `output/`. Keep every artifact there; never commit them, credentials or personal data.
-- Work on master in the main checkout, commit only your own changes and push each one; no pull requests. CI (`.github/workflows/ci.yml`) builds every push and pull request on macOS: the package with the released FFI and without it, the Console's offline `bash` mode, the C and Python examples, the demo for macOS and the iOS simulator, and `cargo check` of the crate on Linux; release and deploy by hand. Use subagents only when asked.
+- Work on master in the main checkout, commit only your own changes and push each one; no pull requests. Build, release and deploy by hand. Do not add CI. Retain existing workflows until local replacements pass and their removal is reviewed. Use subagents only when asked.
+- Keep reference-build dependencies in the repository. Separate online acquisition from builds. Verify local references with OS network access denied.
+- Keep `SHIPPY_REMOTE_BUILD=0` for local checks. Preserve compiler wrappers. Record external toolchains and system libraries explicitly.
 - This file holds principles only and rarely changes. DECISIONS.md is the growing log: add what each change establishes and why, with the commands, dates and measurements behind it.
 
 ## Build
 
-Install Rust 1.97 or newer with the Apple targets in `rust-toolchain.toml`, Xcode 26 and XcodeGen. Run `scripts/build-ffi.sh`, then `swift build` or `xcodebuild` (for the simulator pass `ARCHS=arm64` unless the library was built with `UNIVERSAL=1`). Keep `Cargo.lock` on the SDK's versions of shared crates: libc 0.2.191 dropped `SYSPROTO_CONTROL` for iOS, which portable-pty's nix 0.28 needs, so it stays at the SDK's 0.2.186. Release by hand with `scripts/publish-ffi.sh --upload`: it fingerprints the Rust inputs, builds a universal release XCFramework when no `ffi-<fingerprint>` release exists and uploads it with its `ffi-release.json`; commit and push that file, so a consumer pins the commit that names the build. `.cargo/config.toml` routes rustc through the SDK's `scripts/buildcache`, so a checkout that shares `~/.cache/nanocode/build` with the SDK reuses its compiled crates, and sets the macOS and iOS deployment targets.
+Install Rust 1.97 or newer with the Apple targets in `rust-toolchain.toml`, Xcode 26 and XcodeGen. Run `scripts/build-ffi.sh`, then `swift build` or `xcodebuild` (for the simulator pass `ARCHS=arm64` unless the library was built with `UNIVERSAL=1`). Keep `Cargo.lock` on the SDK's versions of shared crates: libc 0.2.191 dropped `SYSPROTO_CONTROL` for iOS, which portable-pty's nix 0.28 needs, so it stays at the SDK's 0.2.186. Build and qualify the complete XCFramework before publication, following `scripts/RELEASING.md`. The publisher never builds. Run `scripts/publish-ffi.sh --verify ARTIFACT_DIRECTORY QUALIFICATION_JSON`, then use `--upload` only for an authorized release. Commit the resulting `ffi-release.json` after its fresh-consumer check passes. `.cargo/config.toml` routes rustc through the SDK's `scripts/buildcache`, so a checkout that shares `~/.cache/nanocode/build` with the SDK reuses its compiled crates, and sets the macOS and iOS deployment targets.
+
+## Local reference checks
+
+This source-only change includes no private vendor archives or registry source mirror. Reference checks require their separately reviewed local inputs.
+
+```sh
+scripts/reference-swift.sh apple ARTIFACT_DIRECTORY QUALIFICATION_JSON 2
+scripts/reference-swift.sh rust 2
+scripts/reference-swift.sh gate APPLE_RECEIPT LINUX_RECEIPT
+```
+
+Swift requires installed toolchains, local locked Cargo sources and an already qualified XCFramework. These commands never build release FFI.
