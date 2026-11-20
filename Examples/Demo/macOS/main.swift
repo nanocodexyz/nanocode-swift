@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @objc func newChat() { Task { await model.newChat() } }
   @objc func chatgpt() { Task { await model.setStyle(.chatgpt) } }
   @objc func claude() { Task { await model.setStyle(.claude) } }
+  @objc func gemini() { Task { await model.setStyle(.gemini) } }
   @objc func onDevice() { Task { await model.setRunner(.device) } }
   @objc func onCloudflare() { Task { await model.setRunner(.cloudflare) } }
   @objc func onVercel() { Task { await model.setRunner(.vercel) } }
@@ -113,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     add("View", [
       item("ChatGPT Style", #selector(chatgpt), "1", target: self),
       item("Claude Style", #selector(claude), "2", target: self),
+      item("Gemini Style", #selector(gemini), "3", target: self),
       .separator(),
       item("Run on This Device", #selector(onDevice), "1", [.command, .option], target: self),
       item("Run on Cloudflare", #selector(onCloudflare), "2", [.command, .option], target: self),

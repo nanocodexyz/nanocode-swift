@@ -1,11 +1,13 @@
 use nanocode::{
     HarnessFamily, Model, ModelInfo, ModelSelection,
+    antigravity::{AntigravityHarness, DEFAULT_MODEL, Profile},
     codex::{CONTEXT_WINDOW_TOKENS, auto_compact_token_limit},
 };
 use serde_json::{Value, json};
 
 const CLAUDE_AUTO_COMPACT_WINDOW_TOKENS: u64 = 200_000;
 const CLAUDE_COMPACT_RESERVE_TOKENS: u64 = 33_000;
+const GEMINI_CONTEXT_WINDOW_TOKENS: u64 = 1_048_576;
 
 fn entry(
     id: &str,
@@ -56,8 +58,20 @@ pub fn models() -> Value {
             )
         })
         .collect::<Vec<_>>();
+    let antigravity = [DEFAULT_MODEL]
+        .into_iter()
+        .map(|model| {
+            entry(
+                model,
+                &AntigravityHarness::selection(model),
+                GEMINI_CONTEXT_WINDOW_TOKENS,
+                Some(Profile::for_model(model).compaction_limit),
+            )
+        })
+        .collect::<Vec<_>>();
     json!({"harnesses": [
         {"id": "claude", "models": claude},
         {"id": "codex", "models": codex},
+        {"id": "antigravity", "models": antigravity},
     ]})
 }

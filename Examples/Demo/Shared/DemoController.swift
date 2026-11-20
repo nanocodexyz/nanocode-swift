@@ -39,7 +39,7 @@ final class DemoController: KitViewController {
     if UserDefaults.standard.bool(forKey: "NanocodeSettings") { showSettings() }
   }
 
-  var skin: Skin { model.style == .chatgpt ? .chatgpt : .claude }
+  var skin: Skin { model.style == .claude ? .claude : .chatgpt }
 
   func render() {
     let style = model.style
@@ -112,7 +112,7 @@ final class DemoController: KitViewController {
     ) { id in Task { await model.choose(id) } }
     props.title = model.style == .claude ? "Claude-style demo" : nil
     props.prompts = AppModel.prompts
-    let kit = model.style == .chatgpt ? "ChatGPT-style demo" : "Claude-style demo"
+    let kit = "\(model.style.label)-style demo"
     #if os(macOS)
     let (device, toolkit) = ("Mac", "AppKit")
     props.titlebarInset = 72
@@ -140,6 +140,7 @@ final class DemoController: KitViewController {
     case .vercel: return ("Vercel", "Durable agent on nanocode.xyz")
     case .device: break
     }
+    if model.style == .gemini { return ("Gemini", model.googleAccess.label) }
     switch model.access {
     case .keys:
       return ("API keys", "Billed to your Anthropic or OpenAI key")

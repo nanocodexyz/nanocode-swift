@@ -488,7 +488,7 @@ impl Layer for Mpp {
             self.preconnect(generation, &wallet).await;
             let mut paid = reqwest::Request::new(to_http_method(&request.method)?, url);
             *paid.headers_mut() = to_http_headers(&request.headers);
-            *paid.body_mut() = Some(request.body.into());
+            *paid.body_mut() = Some(Vec::<u8>::from(request.body).into());
             let mut exchange = NextExchange {
                 next,
                 client: self.client.clone(),
@@ -622,7 +622,8 @@ impl Exchange for NextExchange<'_> {
                 .body()
                 .and_then(reqwest::Body::as_bytes)
                 .map(<[u8]>::to_vec)
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
         };
         let (status, headers, body, _) = self.next.send(sent).await?.into_parts();
         self.body = Some(body);

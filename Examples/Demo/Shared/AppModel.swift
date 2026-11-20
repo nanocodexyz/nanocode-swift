@@ -10,10 +10,37 @@ import UIKit
 enum Style: String, CaseIterable, Identifiable {
   case chatgpt
   case claude
+  case gemini
   var id: String { rawValue }
-  var label: String { self == .chatgpt ? "ChatGPT" : "Claude" }
-  var provider: Provider { self == .chatgpt ? .codex : .claude }
-  var model: String { self == .chatgpt ? "gpt-6-luna" : "claude-haiku-5-5" }
+  var label: String {
+    switch self {
+    case .chatgpt: "ChatGPT"
+    case .claude: "Claude"
+    case .gemini: "Gemini"
+    }
+  }
+  var provider: Provider {
+    switch self {
+    case .chatgpt: .codex
+    case .claude: .claude
+    case .gemini: .antigravity
+    }
+  }
+  var model: String {
+    switch self {
+    case .chatgpt: "gpt-6-luna"
+    case .claude: "claude-haiku-5-5"
+    case .gemini: "gemini-4-neon"
+    }
+  }
+
+  init(_ provider: Provider) {
+    switch provider {
+    case .codex: self = .chatgpt
+    case .claude: self = .claude
+    case .antigravity: self = .gemini
+    }
+  }
 
   static let about: [String: String] = [
     "glm-5.3": "Open-weight model from Z.ai",
@@ -22,6 +49,7 @@ enum Style: String, CaseIterable, Identifiable {
     "kimi-k3": "Open-weight model from Moonshot AI",
     "claude-haiku-5-5": "Fastest for quick answers",
     "claude-sonnet-5-5": "Smart, efficient model for everyday use",
+    "gemini-4-neon": "Google's Gemini on the Antigravity harness",
   ]
 }
 
@@ -66,6 +94,30 @@ struct Conversation: Identifiable, Hashable {
 struct ModelOption: Identifiable, Hashable {
   let id: String
   let name: String
+}
+
+enum GoogleAccess: String, CaseIterable, Identifiable {
+  case gemini
+  case vertex
+  case express
+  case gateway
+  var id: String { rawValue }
+  var label: String {
+    switch self {
+    case .gemini: "Gemini API key"
+    case .vertex: "Vertex AI"
+    case .express: "Vertex AI express mode"
+    case .gateway: "LLM gateway"
+    }
+  }
+  var detail: String {
+    switch self {
+    case .gemini: "A key from Google AI Studio"
+    case .vertex: "Your Google Cloud project, with Application Default Credentials or an access token"
+    case .express: "A Vertex AI express mode API key"
+    case .gateway: "A gateway that serves the Gemini API"
+    }
+  }
 }
 
 enum Access: String, CaseIterable, Identifiable {
@@ -133,6 +185,14 @@ final class AppModel {
   var paidTools = UserDefaults.standard.bool(forKey: "paidTools")
   var anthropicKey = ""
   var openaiKey = ""
+  var googleAccess = UserDefaults.standard.string(forKey: "googleAccess").flatMap(GoogleAccess.init(rawValue:)) ?? .gemini
+  var geminiKey = ""
+  var googleProject = UserDefaults.standard.string(forKey: "googleProject") ?? ""
+  var googleLocation = UserDefaults.standard.string(forKey: "googleLocation") ?? ""
+  var googleToken = ""
+  var expressKey = ""
+  var gatewayURL = UserDefaults.standard.string(forKey: "gatewayURL") ?? ""
+  var gatewayKey = ""
   var error: String?
   var opening = false
   var script: String?
@@ -168,7 +228,7 @@ final class AppModel {
     provider = style.provider
     model = style.model
     restoreFolder()
-    if access == .keys { loadKeys() }
+    if access == .keys || style == .gemini { loadKeys() }
     if runner != .device { loadTokens() }
   }
 
@@ -177,6 +237,10 @@ final class AppModel {
     keysLoaded = true
     anthropicKey = Self.secret("anthropic")
     openaiKey = Self.secret("openai")
+    geminiKey = Self.secret("gemini")
+    googleToken = Self.secret("googleToken")
+    expressKey = Self.secret("vertexExpress")
+    gatewayKey = Self.secret("gateway")
   }
 
   func loadTokens() {
@@ -289,6 +353,7 @@ final class AppModel {
     self.style = style
     UserDefaults.standard.set(style.rawValue, forKey: "NanocodeStyle")
     provider = style.provider
+    if style == .gemini { loadKeys() }
     model = models.contains { $0.id == style.model } ? style.model : models.first?.id ?? style.model
     thinking = effort(model) ?? catalog?.model(model)?.effort ?? thinking
     if let first = visible.first { await open(first) } else { await newChat() }
@@ -307,11 +372,17 @@ final class AppModel {
   }
 
   func saveKeys() {
-    for (name, value) in [("anthropic", anthropicKey), ("openai", openaiKey)] where keysLoaded {
+    let secrets = [("anthropic", anthropicKey), ("openai", openaiKey), ("gemini", geminiKey), ("googleToken", googleToken),
+                   ("vertexExpress", expressKey), ("gateway", gatewayKey)]
+    for (name, value) in secrets where keysLoaded {
       if value.isEmpty { Keychain.remove(service: "xyz.nanocode.demo.keys", account: name) }
       else { try? Keychain.save(Data(value.utf8), service: "xyz.nanocode.demo.keys", account: name) }
     }
     UserDefaults.standard.set(access.rawValue, forKey: "access")
+    UserDefaults.standard.set(googleAccess.rawValue, forKey: "googleAccess")
+    UserDefaults.standard.set(googleProject, forKey: "googleProject")
+    UserDefaults.standard.set(googleLocation, forKey: "googleLocation")
+    UserDefaults.standard.set(gatewayURL, forKey: "gatewayURL")
     UserDefaults.standard.set(paidTools, forKey: "paidTools")
   }
 
@@ -324,7 +395,8 @@ final class AppModel {
        let model = UserDefaults.standard.string(forKey: "NanocodeModel") {
       self.provider = provider
       self.model = model
-      style = provider == .claude ? .claude : .chatgpt
+      style = Style(provider)
+      if style == .gemini { loadKeys() }
     }
     thinking = (runner == .device ? catalog?.model(model)?.effort : effort(model)) ?? thinking
     await refresh()
@@ -383,7 +455,17 @@ final class AppModel {
     remotes = remoteStore.conversations()
   }
 
+  var google: Authentication {
+    switch googleAccess {
+    case .gemini: .apiKey(geminiKey)
+    case .vertex: .google(.vertex(project: googleProject, location: googleLocation, accessToken: googleToken))
+    case .express: .google(.vertexExpress(expressKey))
+    case .gateway: .google(.gateway(url: gatewayURL, apiKey: gatewayKey))
+    }
+  }
+
   func authentication(for provider: Provider) -> Authentication {
+    if provider == .antigravity { return google }
     switch access {
     case .tempo: return .tempo
     case .plan: return .plan
@@ -480,6 +562,13 @@ final class AppModel {
     case .tempo: await loadWallet()
     case .plan: await loadPlans()
     }
+    saveKeys()
+    if runner == .device, !chat.pending { await newChat() }
+  }
+
+  func setGoogleAccess(_ access: GoogleAccess) async {
+    guard access != googleAccess else { return }
+    googleAccess = access
     saveKeys()
     if runner == .device, !chat.pending { await newChat() }
   }

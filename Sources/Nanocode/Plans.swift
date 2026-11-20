@@ -144,7 +144,7 @@ public final class PlanMonitor {
   public func isSignedIn(_ provider: Provider) -> Bool { status[provider]?.isSignedIn ?? false }
 
   public func refresh() async {
-    for provider in Provider.allCases {
+    for provider in Provider.allCases where provider.hasPlan {
       if let status = try? await runtime.planStatus(provider) { self.status[provider] = status }
     }
   }

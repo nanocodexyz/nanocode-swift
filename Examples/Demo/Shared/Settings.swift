@@ -53,6 +53,9 @@ final class SettingsNode: Stack {
   var checks: [(IconNode, () -> Bool)] = []
   let account = Stack(.vertical, spacing: 0, align: .fill)
   let keys = Stack(.vertical, spacing: 0, align: .fill)
+  let google = Stack(.vertical, spacing: 0, align: .fill)
+  var access: Node?
+  var shownGoogle: GoogleAccess?
   let wallet = Stack(.vertical, spacing: 0, align: .fill)
   let plans = Stack(.vertical, spacing: 0, align: .fill)
   let servers = Stack(.vertical, spacing: 0, align: .fill)
@@ -249,6 +252,7 @@ final class SettingsNode: Stack {
       choice(option.label, detail: option == .tempo ? "Pay per request in MACH over MPP" : option == .plan ? "Your own ChatGPT or Claude subscription" : "Your Anthropic and OpenAI keys",
              selected: { model.access == option }) { Task { await model.setAccess(option) } }
     })
+    self.access = access
     card(keys, [
       field("Anthropic API key", value: model.anthropicKey, secure: true) { model.anthropicKey = $0; model.saveKeys() },
       field("OpenAI API key", value: model.openaiKey, secure: true) { model.openaiKey = $0; model.saveKeys() },
@@ -274,7 +278,7 @@ final class SettingsNode: Stack {
       field("Name", value: handName) { [weak self] in self?.handName = $0 },
     ])
     content.set([
-      section("Account", [access, style(wallet), style(plans), style(keys), paid]),
+      section("Account", [access, style(wallet), style(plans), style(keys), style(google), paid]),
       section("Where the agent runs", [runner, style(servers), style(cloud)]),
       section("Appearance", [styles]),
       section("Workspace", [style(folder)], footer: "Sessions, the shell, device tools and this device's hand work on this folder's real files."),
@@ -294,10 +298,13 @@ final class SettingsNode: Stack {
     for (check, selected) in checks { check.color = selected() ? tint : .clear }
     let model = model
     let device = model.runner == .device
-    keys.gone = !device || model.access != .keys
-    paid?.gone = !device || model.access != .tempo
-    wallet.gone = !device || model.access != .tempo
-    plans.gone = !device || model.access != .plan
+    let gemini = model.style == .gemini
+    access?.gone = !device || gemini
+    keys.gone = !device || gemini || model.access != .keys
+    paid?.gone = !device || gemini || model.access != .tempo
+    wallet.gone = !device || gemini || model.access != .tempo
+    plans.gone = !device || gemini || model.access != .plan
+    google.gone = !device || !gemini
     servers.gone = device
     cloud.gone = model.runner != .cloudflare || !model.deviceHand
     if !cloud.gone {
@@ -305,6 +312,7 @@ final class SettingsNode: Stack {
     }
     renderWallet()
     renderPlans()
+    if !google.gone, shownGoogle != model.googleAccess { renderGoogle() }
     var folderRows: [Node] = [
       row(model.folder == nil ? "The app's folder" : model.folder?.lastPathComponent ?? "Folder", detail: model.folder == nil ? "Inside the app's data" : "Chosen by you"),
       block(mono(model.workspace.path, size: 12)),
@@ -329,6 +337,30 @@ final class SettingsNode: Stack {
     }
     if let error = monitor.error { handRows.append(note(error, color: skin.danger)) }
     card(hand, handRows)
+  }
+
+  func renderGoogle() {
+    let model = model
+    shownGoogle = model.googleAccess
+    var rows: [Node] = GoogleAccess.allCases.map { option in
+      choice(option.label, detail: option.detail, selected: { model.googleAccess == option }) {
+        Task { await model.setGoogleAccess(option) }
+      }
+    }
+    switch model.googleAccess {
+    case .gemini:
+      rows.append(field("Gemini API key", value: model.geminiKey, secure: true) { model.geminiKey = $0; model.saveKeys() })
+    case .vertex:
+      rows.append(field("Google Cloud project (optional)", value: model.googleProject, mono: true) { model.googleProject = $0; model.saveKeys() })
+      rows.append(field("Location (default global)", value: model.googleLocation, mono: true) { model.googleLocation = $0; model.saveKeys() })
+      rows.append(field("Access token (optional, else Application Default Credentials)", value: model.googleToken, secure: true) { model.googleToken = $0; model.saveKeys() })
+    case .express:
+      rows.append(field("Vertex AI express mode API key", value: model.expressKey, secure: true) { model.expressKey = $0; model.saveKeys() })
+    case .gateway:
+      rows.append(field("https://gateway.example.com", value: model.gatewayURL, mono: true) { model.gatewayURL = $0; model.saveKeys() })
+      rows.append(field("Gateway API key (optional)", value: model.gatewayKey, secure: true) { model.gatewayKey = $0; model.saveKeys() })
+    }
+    card(google, rows)
   }
 
   func renderWallet() {

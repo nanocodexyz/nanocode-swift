@@ -18,7 +18,32 @@ public enum Identifier {
 public enum Provider: String, Codable, Sendable, CaseIterable, Identifiable {
   case claude
   case codex
+  case antigravity
   public var id: String { rawValue }
+  public var hasPlan: Bool { self != .antigravity }
+}
+
+public enum GoogleCredentials: Sendable, Hashable {
+  case vertex(project: String? = nil, location: String? = nil, accessToken: String? = nil, credentialsFile: URL? = nil)
+  case vertexExpress(String)
+  case gateway(url: String, apiKey: String? = nil)
+
+  var json: JSON {
+    switch self {
+    case .vertex(let project, let location, let accessToken, let credentialsFile):
+      var fields: [String: JSON] = [:]
+      if let project, !project.isEmpty { fields["project"] = .string(project) }
+      if let location, !location.isEmpty { fields["location"] = .string(location) }
+      if let accessToken, !accessToken.isEmpty { fields["access_token"] = .string(accessToken) }
+      if let credentialsFile { fields["credentials_file"] = .string(credentialsFile.path) }
+      return ["vertex": .object(fields)]
+    case .vertexExpress(let key): return ["vertex_express": .string(key)]
+    case .gateway(let url, let apiKey):
+      var fields: [String: JSON] = ["url": .string(url)]
+      if let apiKey, !apiKey.isEmpty { fields["api_key"] = .string(apiKey) }
+      return ["gateway": .object(fields)]
+    }
+  }
 }
 
 public enum Authentication: Sendable, Hashable {
@@ -26,6 +51,7 @@ public enum Authentication: Sendable, Hashable {
   case apiKey(String)
   case headers([String: String])
   case plan
+  case google(GoogleCredentials)
 
   var json: JSON {
     switch self {
@@ -33,6 +59,7 @@ public enum Authentication: Sendable, Hashable {
     case .apiKey(let key): ["api_key": .string(key)]
     case .headers(let headers): ["headers": .object(headers.mapValues(JSON.string))]
     case .plan: "plan"
+    case .google(let credentials): ["google": credentials.json]
     }
   }
 }

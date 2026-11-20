@@ -182,7 +182,7 @@ if arguments.first == "remote" {
   case (.vercel, nil): RemoteServer.vercel(token: token)
   }
   let provider = Provider(rawValue: ProcessInfo.processInfo.environment["NANOCODE_PROVIDER"] ?? "claude") ?? .claude
-  let model = ProcessInfo.processInfo.environment["NANOCODE_MODEL"] ?? (provider == .claude ? "claude-haiku-5-5" : "gpt-6-luna")
+  let model = ProcessInfo.processInfo.environment["NANOCODE_MODEL"] ?? ({ switch provider { case .claude: "claude-haiku-5-5"; case .codex: "gpt-6-luna"; case .antigravity: "gemini-4-neon" } }())
   let store = try RemoteStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("nanocode-console-remote", isDirectory: true))
   let prompts = values.dropFirst().isEmpty ? ["Run a JavaScript cell that prints 6 * 7, then say the result in one sentence."] : Array(values.dropFirst())
   let session = RemoteSession.create(server: server, store: store, provider: provider, model: model, thinking: "low")
@@ -232,8 +232,19 @@ Task {
   }
 }
 let wallet = Wallet(runtime: runtime)
+let environment = ProcessInfo.processInfo.environment
 let authentication: Authentication
-if let key = ProcessInfo.processInfo.environment[provider == .claude ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"] {
+if provider == .antigravity {
+  if let key = environment["GEMINI_API_KEY"] ?? environment["GOOGLE_API_KEY"], environment["GOOGLE_GENAI_USE_VERTEXAI"] == nil {
+    authentication = .apiKey(key)
+  } else if let url = environment["AGY_LLM_GATEWAY_URL"] {
+    authentication = .google(.gateway(url: url, apiKey: environment["AGY_LLM_GATEWAY_API_KEY"]))
+  } else if let key = environment["GOOGLE_API_KEY"] {
+    authentication = .google(.vertexExpress(key))
+  } else {
+    authentication = .google(.vertex(project: environment["GOOGLE_CLOUD_PROJECT"], location: environment["GOOGLE_CLOUD_LOCATION"]))
+  }
+} else if let key = environment[provider == .claude ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"] {
   authentication = .apiKey(key)
 } else {
   guard let status = await wallet.restore() else {

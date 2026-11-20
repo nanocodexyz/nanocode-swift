@@ -4,6 +4,7 @@ use nanocode::{
     ClaudeClient, ClaudeModel, HarnessFamily, Model, ModelSelection, OpenAi, ServiceTier, Thinking,
     Tools,
     agent::ExecutionEnvironment,
+    antigravity::{AntigravityHarness, AuthMethod, Client, DEFAULT_MODEL, Endpoint, GoogleConfig},
     claude::ClaudeEnvironment,
     codex::{OpenAiAuth, transport::ResponsesTransport},
 };
@@ -26,6 +27,7 @@ pub enum Provider {
     #[default]
     Claude,
     Codex,
+    Antigravity,
 }
 
 impl Provider {
@@ -33,9 +35,21 @@ impl Provider {
         match self {
             Self::Claude => ModelSelection::Claude(ClaudeModel::Haiku55),
             Self::Codex => ModelSelection::Codex(Model::Luna),
+            Self::Antigravity => AntigravityHarness::selection(DEFAULT_MODEL),
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Antigravity => "antigravity",
         }
     }
 }
+
+pub const GOOGLE_STATE_FILE: &str = "antigravity.json";
+const NO_GOOGLE_PLAN: &str = "Google offers no plan sign-in for apps built on nanocode: use a Gemini API key, Vertex AI with Application Default Credentials or an access token, a Vertex AI express mode key or an LLM gateway";
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,6 +59,28 @@ pub enum Auth {
     Plan,
     #[default]
     Tempo,
+    Google(GoogleCredentials),
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum GoogleCredentials {
+    Vertex {
+        #[serde(default)]
+        project: Option<String>,
+        #[serde(default)]
+        location: Option<String>,
+        #[serde(default)]
+        access_token: Option<String>,
+        #[serde(default)]
+        credentials_file: Option<PathBuf>,
+    },
+    VertexExpress(String),
+    Gateway {
+        url: String,
+        #[serde(default)]
+        api_key: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -219,6 +255,7 @@ impl Configuration {
                 .parse::<Model>()
                 .map(ModelSelection::Codex)
                 .map_err(|error| format!("model {model}: {error}"))?,
+            Provider::Antigravity => AntigravityHarness::selection(model),
         };
         selection
             .validate()
@@ -308,6 +345,88 @@ impl Configuration {
     }
 }
 
+fn not_google(provider: &str) -> String {
+    format!("Google credentials work only with the antigravity provider, not {provider}")
+}
+
+pub fn no_google_plan() -> String {
+    NO_GOOGLE_PLAN.to_owned()
+}
+
+pub async fn google_harness(
+    host: &Arc<crate::bridge::Host>,
+    config: &Configuration,
+    model: &ModelSelection,
+) -> Result<AntigravityHarness, String> {
+    let mut values = BTreeMap::<&'static str, String>::new();
+    let mut google = GoogleConfig {
+        state: Some(host.data_dir.join(GOOGLE_STATE_FILE)),
+        ..GoogleConfig::default()
+    };
+    let vertex_base = |values: &mut BTreeMap<&'static str, String>| {
+        if let Some(base) = &config.endpoint {
+            values.insert("GOOGLE_VERTEX_BASE_URL", base.clone());
+        }
+    };
+    let method = match &config.auth {
+        Auth::ApiKey(key) => {
+            values.insert("GEMINI_API_KEY", key.clone());
+            if let Some(base) = &config.endpoint {
+                values.insert("GEMINI_BASE_URL", base.clone());
+            }
+            AuthMethod::ApiKey
+        }
+        Auth::Google(GoogleCredentials::Vertex {
+            project,
+            location,
+            access_token,
+            credentials_file,
+        }) => {
+            if let Some(token) = access_token {
+                values.insert("GOOGLE_OAUTH_ACCESS_TOKEN", token.clone());
+            }
+            if let Some(file) = credentials_file {
+                values.insert(
+                    "GOOGLE_APPLICATION_CREDENTIALS",
+                    file.to_string_lossy().into_owned(),
+                );
+            }
+            vertex_base(&mut values);
+            google.project.clone_from(project);
+            google.location.clone_from(location);
+            AuthMethod::Vertex
+        }
+        Auth::Google(GoogleCredentials::VertexExpress(key)) => {
+            values.insert("GOOGLE_API_KEY", key.clone());
+            vertex_base(&mut values);
+            AuthMethod::VertexExpress
+        }
+        Auth::Google(GoogleCredentials::Gateway { url, api_key }) => {
+            values.insert("AGY_LLM_GATEWAY_URL", url.clone());
+            if let Some(key) = api_key {
+                values.insert("AGY_LLM_GATEWAY_API_KEY", key.clone());
+            }
+            AuthMethod::Gateway
+        }
+        Auth::Plan => return Err(NO_GOOGLE_PLAN.to_owned()),
+        Auth::Tempo | Auth::Headers(_) => {
+            return Err("the antigravity provider takes a Gemini API key or Google credentials (Vertex AI, Vertex AI express mode or an LLM gateway)".to_owned());
+        }
+    };
+    google.method = Some(method);
+    let lookup = move |name: &str| {
+        values
+            .get(name)
+            .cloned()
+            .or_else(|| std::env::var(name).ok())
+    };
+    let sender = Client::native_sender().map_err(|error| error.to_string())?;
+    let endpoint = Endpoint::discover(&google, &lookup, sender, model.as_str()).await?;
+    Ok(AntigravityHarness::from(google)
+        .endpoint(endpoint)
+        .app_data(host.data_dir.join("antigravity")))
+}
+
 pub fn claude_client(
     host: &Arc<crate::bridge::Host>,
     config: &Configuration,
@@ -341,6 +460,7 @@ pub fn claude_client(
             ClaudeClient::with_auth_headers(Default::default(), url.clone(), Default::default())
                 .with_http_layer(payments.layer(Service::Anthropic, &url)?)
         }
+        Auth::Google(_) => return Err(not_google("claude")),
     })
 }
 
@@ -386,6 +506,7 @@ pub async fn codex_client(
                 .transport(ResponsesTransport::Https)
                 .http_layer(payments.layer(Service::OpenAi, &base)?)
         }
+        Auth::Google(_) => return Err(not_google("codex")),
     };
     builder
         .model(model)
@@ -407,7 +528,7 @@ pub fn codex_web_search(
             _ => OPENAI_API.to_owned(),
         });
     let transport: Arc<dyn nanocode::codex::transport::host::HostTransport> = match &config.auth {
-        Auth::Plan => return Ok(None),
+        Auth::Plan | Auth::Google(_) => return Ok(None),
         Auth::Tempo => Arc::new(crate::payments::Transport::new(
             payments.layer(Service::OpenAi, &base)?,
         )),

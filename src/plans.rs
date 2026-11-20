@@ -239,6 +239,7 @@ pub async fn sign_in(
         Provider::Codex => Ok(chatgpt_status(
             chatgpt(host).await?.start_login().await.map_err(text)?,
         )),
+        Provider::Antigravity => Err(crate::config::no_google_plan()),
     }
 }
 
@@ -254,6 +255,7 @@ pub async fn status(host: &Arc<Host>, provider: Provider) -> Result<Value, Strin
         Provider::Codex => Ok(chatgpt_status(
             chatgpt(host).await?.status().await.map_err(text)?,
         )),
+        Provider::Antigravity => Err(crate::config::no_google_plan()),
     }
 }
 
@@ -261,6 +263,7 @@ pub async fn sign_out(host: &Arc<Host>, provider: Provider) -> Result<Value, Str
     match provider {
         Provider::Claude => claude(host)?.logout().await.map_err(text)?,
         Provider::Codex => chatgpt(host).await?.logout().await.map_err(text)?,
+        Provider::Antigravity => return Err(crate::config::no_google_plan()),
     }
     Ok(Value::Null)
 }

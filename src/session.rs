@@ -10,8 +10,9 @@ use std::{
 
 use nanocode::{
     ClaudeHarness, CodexHarness, ForkRequest, ModelSelection, ModelTransport, Nanocode,
-    NanocodeError, Origin, SubagentControl, Thinking, Tool,
+    NanocodeError, Origin, SubagentControl, Thinking, Tool, Tools,
     agent::input::UserInput,
+    antigravity::GoogleBuilder as _,
     backend::Prompt,
     backend::ToolCollection as _,
     durability::{
@@ -175,6 +176,11 @@ pub async fn open(host: &Arc<Host>, config: Configuration) -> Result<Value, Stri
     tokio::fs::create_dir_all(&workspace)
         .await
         .map_err(|error| format!("create {}: {error}", workspace.display()))?;
+    if config.provider == Provider::Antigravity
+        && (config.permission_mode.is_some() || config.observe_edits)
+    {
+        return Err("the antigravity harness runs its own workspace tools, which permission modes and edit observation cannot gate".to_owned());
+    }
     let gate = (config.permission_mode.is_some() || config.observe_edits).then(|| {
         Gate::new(
             host,
@@ -211,7 +217,7 @@ pub async fn open(host: &Arc<Host>, config: Configuration) -> Result<Value, Stri
     let mut builder = Nanocode::builder();
     let claude_client = match config.provider {
         Provider::Claude => Some(crate::config::claude_client(host, &config, &host.payments)?),
-        Provider::Codex => None,
+        Provider::Codex | Provider::Antigravity => None,
     };
     if let Some(client) = &claude_client {
         let mut tools = config.workspace_tools(Provider::Claude, &host.shell)?;
@@ -280,6 +286,20 @@ pub async fn open(host: &Arc<Host>, config: Configuration) -> Result<Value, Stri
             harness = harness.instructions(instructions.clone());
         }
         builder = builder.openai(harness);
+    }
+    if config.provider == Provider::Antigravity {
+        if config.workspace_tools != WorkspaceTools::All {
+            return Err("the antigravity harness runs its own native workspace tools and takes only the all workspace tools mode".to_owned());
+        }
+        let harness = crate::config::google_harness(host, &config, &model).await?;
+        let mut tools = Tools::builder().without_defaults().build().map_err(text)?;
+        for tool in &shared {
+            tools = tools.add_shared_tool(Arc::clone(tool)).map_err(text)?;
+        }
+        builder = builder.google(harness).tools(tools);
+        if let Some(instructions) = &config.instructions {
+            builder = builder.instructions(instructions.clone());
+        }
     }
     if config.subagents == Some(false) {
         builder = builder.without_subagents();
@@ -419,7 +439,7 @@ fn summary(session: &Session) -> Value {
     json!({
         "session_id": session.inbox.session_id(),
         "model": session.inbox.model(),
-        "provider": match session.provider { Provider::Claude => "claude", Provider::Codex => "codex" },
+        "provider": session.provider.name(),
     })
 }
 
