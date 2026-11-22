@@ -128,7 +128,7 @@ if mode == '_apple':
     require(subprocess.check_output(['xcodegen', '--version'], text=True).strip() == 'Version: 2.46.0', 'XcodeGen must be 2.46.0')
     checks['xcodegen'] = run(work, 'xcodegen', ['xcodegen', 'generate', '--spec', 'Examples/Demo/project.yml'])
     for name, scheme, destination in [('demo_macos', 'NanocodeDemo-macOS', 'generic/platform=macOS'), ('demo_ios', 'NanocodeDemo-iOS', 'generic/platform=iOS Simulator')]:
-        checks[name] = run(work, name, ['xcodebuild', 'build', '-project', 'Examples/Demo/NanocodeDemo.xcodeproj', '-scheme', scheme, '-destination', destination, '-derivedDataPath', 'output/DerivedData', 'ARCHS=arm64', 'CODE_SIGNING_ALLOWED=NO', '-jobs', jobs, '-disableAutomaticPackageResolution', '-skipPackageUpdates', '-IDEPackageSupportDisableManifestSandbox=YES'])
+        checks[name] = run(work, name, ['xcodebuild', 'build', '-project', 'Examples/Demo/NanocodeDemo.xcodeproj', '-scheme', scheme, '-destination', destination, '-derivedDataPath', 'output/DerivedData', 'ARCHS=arm64', 'CODE_SIGNING_ALLOWED=NO', 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox', '-jobs', jobs, '-disableAutomaticPackageResolution', '-skipPackageUpdates', '-IDEPackageSupportDisableManifestSandbox=YES'])
 else:
     require(len(arguments) == 1 and arguments[0].isdecimal() and int(arguments[0]) > 0, 'rust requires positive JOBS')
     require(platform.system() == 'Linux', 'Linux Rust gate cannot be replaced by macOS cargo check')
