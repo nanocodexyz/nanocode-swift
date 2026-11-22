@@ -12,7 +12,7 @@ Run from the repository root with sufficient memory reserved for the operating s
 set -euo pipefail
 mkdir -p output
 PROFILE=release UNIVERSAL=1 PLATFORMS='macos ios ios-sim' \
-  CARGO_BUILD_JOBS=2 NUM_JOBS=2 SHIPPY_REMOTE_BUILD=0 \
+  RUSTC_BOOTSTRAP=1 CARGO_BUILD_JOBS=2 NUM_JOBS=2 SHIPPY_REMOTE_BUILD=0 \
   scripts/build-ffi.sh 2>&1 | tee output/ffi-build.log
 swift build -j 2
 NANOCODE_WITHOUT_FFI=1 swift build -j 2 --scratch-path output/without-ffi
@@ -29,6 +29,8 @@ xcodebuild build -project Examples/Demo/NanocodeDemo.xcodeproj \
   -scheme NanocodeDemo-iOS -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath output/DerivedData ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -jobs 2
 ```
+
+The Rust 1.97.1 qualification used `RUSTC_BOOTSTRAP=1` with the existing SDK compiler wrappers. Without it, the retained compiler-probe output enabled `proc_macro_span` while compiling `proc-macro2` on stable and the build failed with E0554. Keep the wrappers intact and record this setting with the toolchain.
 
 Require Console output `a b 2` followed by the SHA-256 digest of `abc`, and no XCFramework inside the no-FFI scratch directory. Save exit codes, commands and logs. Also require actual C ABI shell runs on macOS and the arm64 iOS simulator: basic Python, NumPy, platform defaults, Matplotlib Agg writing a valid PNG, and subprocess. An import check, mocked platform, successful link or demo build is not this runtime proof. No Python monkeypatch is permitted. Simulator proof is not physical-device proof.
 
